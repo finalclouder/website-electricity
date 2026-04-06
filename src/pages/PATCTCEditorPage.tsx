@@ -1,6 +1,8 @@
-import React, { useEffect } from 'react';
-import { FileDown, FileText, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { FileDown, FileText, Loader2, Save, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { useSocialStore } from '../store/useSocialStore';
 import { Preview } from '../components/Preview';
 import {
   CoverPageForm,
@@ -27,6 +29,9 @@ export const PATCTCEditorPage: React.FC = () => {
     errors,
     validateData
   } = useStore();
+  const { user } = useAuthStore();
+  const { saveDocument, savedDocuments, updateDocument } = useSocialStore();
+  const [saveNotif, setSaveNotif] = useState(false);
 
   // === Auto-sync effects ===
 
@@ -164,6 +169,35 @@ export const PATCTCEditorPage: React.FC = () => {
   // === Export DOCX via server ===
   const [isExportingDocx, setIsExportingDocx] = React.useState(false);
 
+  // === Save document ===
+  const handleSave = () => {
+    if (!user) return;
+    const title = `PA ${data.soVb} - ĐZ ${data.dz} cột ${data.cot}`;
+    const description = data.jobItems.join(', ');
+
+    // Check if existing doc matches (same user, same soVb)
+    const existingDoc = savedDocuments.find(d => d.authorId === user.id && d.title === title);
+    if (existingDoc) {
+      updateDocument(existingDoc.id, {
+        description,
+        dataSnapshot: JSON.stringify(data),
+        tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
+      });
+    } else {
+      saveDocument({
+        title,
+        description,
+        authorId: user.id,
+        authorName: user.name,
+        dataSnapshot: JSON.stringify(data),
+        status: 'draft',
+        tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
+      });
+    }
+    setSaveNotif(true);
+    setTimeout(() => setSaveNotif(false), 2000);
+  };
+
   const exportDocx = async () => {
     const isValid = validateData();
     if (!isValid) return;
@@ -194,9 +228,9 @@ export const PATCTCEditorPage: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden flex-col sm:flex-row">
       {/* === Sidebar === */}
-      <div className="w-[450px] flex-shrink-0 bg-white border-r border-zinc-200 flex flex-col h-full">
+      <div className="w-full sm:w-[450px] flex-shrink-0 bg-white border-b sm:border-b-0 sm:border-r border-zinc-200 flex flex-col h-full">
         {/* Scrollable form sections */}
         <div className="flex-1 overflow-y-auto scroll-smooth">
           <CoverPageForm />
@@ -212,8 +246,8 @@ export const PATCTCEditorPage: React.FC = () => {
           <WorkZoneDiagramForm />
         </div>
 
-        {/* Footer - Export */}
-        <div className="border-t border-zinc-200 p-4 bg-white">
+        {/* Footer - Save & Export */}
+        <div className="border-t border-zinc-200 p-3 sm:p-4 bg-white">
           {errors.length > 0 && (
             <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
               {errors.map((err, i) => (
@@ -223,6 +257,27 @@ export const PATCTCEditorPage: React.FC = () => {
               ))}
             </div>
           )}
+
+          {/* Save button */}
+          <button
+            onClick={handleSave}
+            className={`w-full mb-2 py-2.5 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm ${
+              saveNotif
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
+            }`}
+          >
+            {saveNotif ? (
+              <>
+                <CheckCircle2 size={16} /> Đã lưu!
+              </>
+            ) : (
+              <>
+                <Save size={16} /> Lưu phương án
+              </>
+            )}
+          </button>
+
           <div className="flex gap-2">
             <button
               onClick={exportPdf}

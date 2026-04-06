@@ -109,7 +109,7 @@ const MediaGallery: React.FC<{ media: string[] }> = ({ media }) => {
 };
 
 // ============ Post Card ============
-const PostCard: React.FC<{ post: SocialPost }> = ({ post }) => {
+const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) => void }> = ({ post, onViewProfile }) => {
   const { user } = useAuthStore();
   const { toggleLike, addComment, deletePost, deleteComment, editComment, sharePost, toggleCommentLike } = useSocialStore();
   const [showComments, setShowComments] = useState(false);
@@ -172,12 +172,24 @@ const PostCard: React.FC<{ post: SocialPost }> = ({ post }) => {
       <div className="p-4 pb-0">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm">
-              {getInitials(post.authorName)}
-            </div>
+            <button
+              onClick={() => onViewProfile?.(post.authorId)}
+              className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm hover:ring-2 hover:ring-blue-300 transition-all overflow-hidden flex-shrink-0"
+            >
+              {post.authorAvatar ? (
+                <img src={post.authorAvatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                getInitials(post.authorName)
+              )}
+            </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-zinc-900">{post.authorName}</span>
+                <button
+                  onClick={() => onViewProfile?.(post.authorId)}
+                  className="font-semibold text-sm text-zinc-900 hover:text-blue-600 hover:underline transition-colors"
+                >
+                  {post.authorName}
+                </button>
                 {post.authorRole === 'admin' && (
                   <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold uppercase rounded">Admin</span>
                 )}
@@ -454,7 +466,7 @@ const PostCard: React.FC<{ post: SocialPost }> = ({ post }) => {
 };
 
 // ============ Main Social Page ============
-export const SocialPage: React.FC = () => {
+export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> = ({ onViewProfile }) => {
   const { user } = useAuthStore();
   const { posts, addPost } = useSocialStore();
   const [newContent, setNewContent] = useState('');
@@ -679,7 +691,7 @@ export const SocialPage: React.FC = () => {
       {/* Posts feed */}
       <div className="space-y-3 sm:space-y-4">
         {sortedPosts.map(post => (
-          <PostCard key={post.id} post={post} />
+          <PostCard key={post.id} post={post} onViewProfile={onViewProfile} />
         ))}
         {sortedPosts.length === 0 && (
           <div className="text-center py-12 text-zinc-400">

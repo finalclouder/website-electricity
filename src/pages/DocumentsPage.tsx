@@ -17,7 +17,7 @@ function formatDate(dateStr: string): string {
   });
 }
 
-export const DocumentsPage: React.FC = () => {
+export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void }> = ({ onViewProfile }) => {
   const { user } = useAuthStore();
   const { savedDocuments, saveDocument, deleteDocument, updateDocument } = useSocialStore();
   const { data } = useStore();
@@ -60,7 +60,8 @@ export const DocumentsPage: React.FC = () => {
     });
 
   return (
-    <div className="max-w-4xl mx-auto py-6 px-4">
+    <div className="h-full overflow-y-auto">
+    <div className="max-w-4xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -125,7 +126,12 @@ export const DocumentsPage: React.FC = () => {
                   <div className="flex items-center gap-3 text-[11px] text-zinc-400">
                     <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(doc.updatedAt)}</span>
                     <span>•</span>
-                    <span>{doc.authorName}</span>
+                    <button
+                      onClick={() => onViewProfile?.(doc.authorId)}
+                      className="hover:text-blue-600 hover:underline transition-colors"
+                    >
+                      {doc.authorName}
+                    </button>
                   </div>
                   {doc.tags.length > 0 && (
                     <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -179,6 +185,7 @@ export const DocumentsPage: React.FC = () => {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };

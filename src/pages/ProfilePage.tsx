@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
+import { useStore } from '../store/useStore';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -19,10 +20,18 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('vi-VN');
 }
 
-export const ProfilePage: React.FC = () => {
-  const { user, updateProfile, changePassword } = useAuthStore();
+export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserId }) => {
+  const { user, updateProfile, changePassword, getAllUsers } = useAuthStore();
   const { posts, savedDocuments } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
+
+  // Determine if we're viewing another user's profile
+  const allUsers = getAllUsers();
+  const isViewingOther = viewingUserId && viewingUserId !== user?.id;
+  const viewedUser = isViewingOther
+    ? allUsers.find(u => u.id === viewingUserId)
+    : user;
+
   const [editName, setEditName] = useState(user?.name || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
@@ -39,13 +48,23 @@ export const ProfilePage: React.FC = () => {
   const [pwNotification, setPwNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   if (!user) return null;
+  if (!viewedUser) return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <AlertTriangle size={48} className="mx-auto mb-4 text-zinc-300" />
+        <p className="text-sm text-zinc-400">Không tìm thấy người dùng</p>
+      </div>
+    </div>
+  );
 
-  // User stats
-  const userPosts = posts.filter(p => p.authorId === user.id);
-  const userComments = posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === user.id).length, 0);
+  const profileUser = viewedUser;
+
+  // User stats - use profileUser's ID
+  const userPosts = posts.filter(p => p.authorId === profileUser.id);
+  const userComments = posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).length, 0);
   const totalLikesReceived = userPosts.reduce((acc, p) => acc + p.likes.length, 0)
-    + posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === user.id).reduce((a, c) => a + c.likes.length, 0), 0);
-  const userDocs = savedDocuments.filter(d => d.authorId === user.id);
+    + posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).reduce((a, c) => a + c.likes.length, 0), 0);
+  const userDocs = savedDocuments.filter(d => d.authorId === profileUser.id);
 
   const handleSaveProfile = () => {
     if (!editName.trim()) return;
@@ -79,6 +98,17 @@ export const ProfilePage: React.FC = () => {
 
   const handleRemoveAvatar = () => {
     updateProfile({ avatar: '' });
+  };
+
+  // Load a document into the editor
+  const handleLoadDoc = (dataSnapshot: string) => {
+    try {
+      const parsed = JSON.parse(dataSnapshot);
+      useStore.getState().setData(parsed);
+      alert('Đã tải phương án vào trình soạn thảo! Chuyển sang tab "Lập phương án" để xem.');
+    } catch {
+      alert('Không thể tải dữ liệu');
+    }
   };
 
   const handleChangePassword = () => {
@@ -117,19 +147,31 @@ export const ProfilePage: React.FC = () => {
     { label: 'Tài liệu', value: userDocs.length, icon: FileText, color: 'purple' },
   ];
 
-  const hasAvatar = user.avatar && user.avatar.length > 0;
+  const hasAvatar = profileUser.avatar && profileUser.avatar.length > 0;
 
   return (
     <div className="h-full overflow-y-auto">
     <div className="max-w-3xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
       {/* Hidden file input for avatar */}
-      <input
-        ref={avatarInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleAvatarChange}
-      />
+      {!isViewingOther && (
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleAvatarChange}
+        />
+      )}
+
+      {/* Back button when viewing other user */}
+      {isViewingOther && (
+        <button
+          onClick={() => window.history.back()}
+          className="mb-4 px-3 py-1.5 bg-white border border-zinc-200 rounded-xl text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2 transition-all"
+        >
+          <ArrowLeft size={14} /> Quay lại
+        </button>
+      )}
 
       {/* Profile Card */}
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden mb-6">
@@ -145,22 +187,24 @@ export const ProfilePage: React.FC = () => {
             <div className="relative group">
               <div className="w-24 h-24 rounded-2xl shadow-xl border-4 border-white overflow-hidden flex-shrink-0">
                 {hasAvatar ? (
-                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                  <img src={profileUser.avatar} alt={profileUser.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-3xl font-bold">
-                    {getInitials(user.name)}
+                    {getInitials(profileUser.name)}
                   </div>
                 )}
               </div>
-              {/* Camera overlay */}
-              <button
-                onClick={() => avatarInputRef.current?.click()}
-                className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-all cursor-pointer border-4 border-transparent"
-              >
-                <Camera size={22} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
-              </button>
+              {/* Camera overlay - only for own profile */}
+              {!isViewingOther && (
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-all cursor-pointer border-4 border-transparent"
+                >
+                  <Camera size={22} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                </button>
+              )}
               {/* Remove avatar button */}
-              {hasAvatar && (
+              {!isViewingOther && hasAvatar && (
                 <button
                   onClick={handleRemoveAvatar}
                   className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg"
@@ -173,18 +217,18 @@ export const ProfilePage: React.FC = () => {
 
             <div className="flex-1 pb-1">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-zinc-900">{user.name}</h1>
-                {user.role === 'admin' && (
+                <h1 className="text-xl font-bold text-zinc-900">{profileUser.name}</h1>
+                {profileUser.role === 'admin' && (
                   <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
                     <Shield size={10} /> Admin
                   </span>
                 )}
               </div>
-              <p className="text-sm text-zinc-500">{user.email}</p>
-              {user.bio && (
-                <p className="text-sm text-zinc-600 mt-1">{user.bio}</p>
+              <p className="text-sm text-zinc-500">{profileUser.email}</p>
+              {profileUser.bio && (
+                <p className="text-sm text-zinc-600 mt-1">{profileUser.bio}</p>
               )}
-              {!user.bio && !isEditing && (
+              {!profileUser.bio && !isEditing && !isViewingOther && (
                 <button
                   onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditBio(''); setIsEditing(true); }}
                   className="text-sm text-blue-500 hover:text-blue-600 mt-1 italic"
@@ -193,23 +237,25 @@ export const ProfilePage: React.FC = () => {
                 </button>
               )}
             </div>
-            <button
-              onClick={() => {
-                if (isEditing) handleCancelEdit();
-                else { setEditName(user.name); setEditEmail(user.email); setEditBio(user.bio || ''); setIsEditing(true); }
-              }}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0 ${
-                isEditing
-                  ? 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'
-              }`}
-            >
-              {isEditing ? <><X size={14} /> Hủy</> : <><Edit3 size={14} /> Chỉnh sửa</>}
-            </button>
+            {!isViewingOther && (
+              <button
+                onClick={() => {
+                  if (isEditing) handleCancelEdit();
+                  else { setEditName(user.name); setEditEmail(user.email); setEditBio(user.bio || ''); setIsEditing(true); }
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0 ${
+                  isEditing
+                    ? 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'
+                }`}
+              >
+                {isEditing ? <><X size={14} /> Hủy</> : <><Edit3 size={14} /> Chỉnh sửa</>}
+              </button>
+            )}
           </div>
 
-          {/* Edit Form */}
-          {isEditing && (
+          {/* Edit Form - only own profile */}
+          {!isViewingOther && isEditing && (
             <div className="bg-zinc-50 rounded-xl p-4 mb-4 border border-zinc-200">
               <h3 className="text-sm font-bold text-zinc-700 mb-3">Chỉnh sửa hồ sơ</h3>
               <div className="space-y-3">
@@ -276,7 +322,8 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Password Change Section */}
+      {/* Password Change Section - only own profile */}
+      {!isViewingOther && (
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden mb-6">
         <button
           onClick={() => { setShowPasswordForm(!showPasswordForm); setOldPassword(''); setNewPassword(''); setConfirmPassword(''); }}
@@ -370,6 +417,7 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* Password notification */}
       {pwNotification && (
@@ -386,7 +434,7 @@ export const ProfilePage: React.FC = () => {
       {/* Content Tabs */}
       <div className="flex gap-2 mb-4">
         {[
-          { id: 'posts' as const, label: 'Bài viết của tôi', icon: FileText },
+          { id: 'posts' as const, label: isViewingOther ? 'Bài viết' : 'Bài viết của tôi', icon: FileText },
           { id: 'docs' as const, label: 'Tài liệu', icon: FileText },
           { id: 'activity' as const, label: 'Hoạt động', icon: Clock },
         ].map(tab => {
@@ -414,7 +462,7 @@ export const ProfilePage: React.FC = () => {
             {userPosts.length === 0 ? (
               <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center">
                 <FileText size={40} className="mx-auto mb-3 text-zinc-200" />
-                <p className="text-sm text-zinc-400">Bạn chưa đăng bài viết nào</p>
+                <p className="text-sm text-zinc-400">{isViewingOther ? 'Chưa có bài viết nào' : 'Bạn chưa đăng bài viết nào'}</p>
               </div>
             ) : (
               userPosts.map(post => (
@@ -450,7 +498,7 @@ export const ProfilePage: React.FC = () => {
             {userDocs.length === 0 ? (
               <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center">
                 <FileText size={40} className="mx-auto mb-3 text-zinc-200" />
-                <p className="text-sm text-zinc-400">Bạn chưa lưu tài liệu nào</p>
+                <p className="text-sm text-zinc-400">{isViewingOther ? 'Chưa có tài liệu nào' : 'Bạn chưa lưu tài liệu nào'}</p>
               </div>
             ) : (
               userDocs.map(doc => (
@@ -473,6 +521,15 @@ export const ProfilePage: React.FC = () => {
                         </span>
                       </div>
                     </div>
+                    {/* Load/Download button */}
+                    <button
+                      onClick={() => handleLoadDoc(doc.dataSnapshot)}
+                      className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 flex-shrink-0"
+                      title={isViewingOther ? 'Tải về và chỉnh sửa' : 'Mở trong trình soạn thảo'}
+                    >
+                      <Download size={14} />
+                      <span className="hidden sm:inline">{isViewingOther ? 'Tải về' : 'Mở'}</span>
+                    </button>
                   </div>
                 </div>
               ))
