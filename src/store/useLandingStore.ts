@@ -377,6 +377,29 @@ export const useLandingStore = create<LandingStore>()(
 
       resetToDefault: () => set({ config: DEFAULT_CONFIG }),
     }),
-    { name: 'patctc-landing' }
+    {
+      name: 'patctc-landing',
+      // Merge saved config with DEFAULT_CONFIG to fill missing fields from new updates
+      merge: (persisted: any, current: any) => {
+        if (!persisted || !persisted.config) return current;
+        const savedConfig = persisted.config;
+        // Deep merge: fill any missing top-level config keys from DEFAULT_CONFIG
+        const mergedConfig = { ...DEFAULT_CONFIG, ...savedConfig };
+        // Ensure nested objects also have defaults
+        mergedConfig.contact = { ...DEFAULT_CONFIG.contact, ...(savedConfig.contact || {}) };
+        mergedConfig.customerCareBanner = { ...DEFAULT_CONFIG.customerCareBanner, ...(savedConfig.customerCareBanner || {}) };
+        // Ensure arrays exist
+        if (!mergedConfig.gallery || !Array.isArray(mergedConfig.gallery)) mergedConfig.gallery = DEFAULT_CONFIG.gallery;
+        if (!mergedConfig.videos || !Array.isArray(mergedConfig.videos)) mergedConfig.videos = DEFAULT_CONFIG.videos;
+        // Ensure heroSlides have mediaType
+        if (mergedConfig.heroSlides) {
+          mergedConfig.heroSlides = mergedConfig.heroSlides.map((s: any) => ({
+            ...s,
+            mediaType: s.mediaType || 'image',
+          }));
+        }
+        return { ...current, config: mergedConfig };
+      },
+    }
   )
 );
