@@ -110,7 +110,7 @@ const MediaGallery: React.FC<{ media: string[] }> = ({ media }) => {
 
 // ============ Post Card ============
 const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) => void }> = ({ post, onViewProfile }) => {
-  const { user } = useAuthStore();
+  const { user, getAllUsers } = useAuthStore();
   const { toggleLike, addComment, deletePost, deleteComment, editComment, sharePost, toggleCommentLike } = useSocialStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -119,6 +119,10 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const commentInputRef = useRef<HTMLInputElement>(null);
+  const [showLikesPopup, setShowLikesPopup] = useState(false);
+  const [showSharesPopup, setShowSharesPopup] = useState(false);
+
+  const allUsers = getAllUsers();
 
   const isLiked = user ? post.likes.includes(user.id) : false;
   const catInfo = CATEGORIES.find(c => c.value === post.category) || CATEGORIES[0];
@@ -162,8 +166,15 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
   };
 
   const handleShare = () => {
-    sharePost(post.id);
+    if (!user) return;
+    sharePost(post.id, user.id);
     navigator.clipboard?.writeText(`Bài viết từ ${post.authorName}: ${post.content.slice(0, 100)}...`);
+  };
+
+  // Resolve user names from IDs
+  const resolveUserName = (userId: string) => {
+    const u = allUsers.find(u => u.id === userId);
+    return u?.name || 'Người dùng';
   };
 
   return (
@@ -239,10 +250,99 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
 
       {/* Stats */}
       <div className="px-4 pb-2 flex items-center justify-between text-xs text-zinc-400">
-        <span>{post.likes.length > 0 ? `${post.likes.length} lượt thích` : ''}</span>
+        <div className="relative">
+          {post.likes.length > 0 ? (
+            <button
+              onClick={() => { setShowLikesPopup(!showLikesPopup); setShowSharesPopup(false); }}
+              className="hover:text-blue-500 hover:underline transition-colors flex items-center gap-1"
+            >
+              <Heart size={12} fill="currentColor" className="text-red-400" />
+              {post.likes.length} lượt thích
+            </button>
+          ) : <span />}
+
+          {/* Likes popup */}
+          {showLikesPopup && post.likes.length > 0 && (
+            <>
+              <div className="fixed inset-0 z-[5]" onClick={() => setShowLikesPopup(false)} />
+              <div className="absolute left-0 bottom-6 bg-white border border-zinc-200 rounded-xl shadow-xl py-2 z-10 min-w-48 max-h-60 overflow-y-auto">
+                <div className="px-3 pb-1.5 mb-1 border-b border-zinc-100 text-[11px] font-bold text-zinc-500 uppercase">
+                  Đã thích ({post.likes.length})
+                </div>
+                {post.likes.map(uid => {
+                  const u = allUsers.find(u => u.id === uid);
+                  return (
+                    <button
+                      key={uid}
+                      onClick={() => { onViewProfile?.(uid); setShowLikesPopup(false); }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2.5 hover:bg-zinc-50 transition-colors text-left"
+                    >
+                      <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
+                        {u?.avatar ? (
+                          <img src={u.avatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-[9px] font-bold">
+                            {getInitials(u?.name || '?')}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs font-medium text-zinc-700">{u?.name || 'Người dùng'}</span>
+                      {u?.role === 'admin' && <span className="px-1 py-0.5 bg-blue-100 text-blue-600 text-[8px] font-bold rounded">ADMIN</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="flex gap-3">
           {post.comments.length > 0 && <span>{post.comments.length} bình luận</span>}
-          {post.shares > 0 && <span>{post.shares} chia sẻ</span>}
+
+          <div className="relative">
+            {post.shares > 0 ? (
+              <button
+                onClick={() => { setShowSharesPopup(!showSharesPopup); setShowLikesPopup(false); }}
+                className="hover:text-blue-500 hover:underline transition-colors"
+              >
+                {post.shares} chia sẻ
+              </button>
+            ) : null}
+
+            {/* Shares popup */}
+            {showSharesPopup && (post.sharedBy || []).length > 0 && (
+              <>
+                <div className="fixed inset-0 z-[5]" onClick={() => setShowSharesPopup(false)} />
+                <div className="absolute right-0 bottom-6 bg-white border border-zinc-200 rounded-xl shadow-xl py-2 z-10 min-w-48 max-h-60 overflow-y-auto">
+                  <div className="px-3 pb-1.5 mb-1 border-b border-zinc-100 text-[11px] font-bold text-zinc-500 uppercase">
+                    Đã chia sẻ ({(post.sharedBy || []).length})
+                  </div>
+                  {(post.sharedBy || []).map(uid => {
+                    const u = allUsers.find(u => u.id === uid);
+                    return (
+                      <button
+                        key={uid}
+                        onClick={() => { onViewProfile?.(uid); setShowSharesPopup(false); }}
+                        className="w-full px-3 py-1.5 flex items-center gap-2.5 hover:bg-zinc-50 transition-colors text-left"
+                      >
+                        <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
+                          {u?.avatar ? (
+                            <img src={u.avatar} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-[9px] font-bold">
+                              {getInitials(u?.name || '?')}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-xs font-medium text-zinc-700">{u?.name || 'Người dùng'}</span>
+                        {u?.role === 'admin' && <span className="px-1 py-0.5 bg-blue-100 text-blue-600 text-[8px] font-bold rounded">ADMIN</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

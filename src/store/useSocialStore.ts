@@ -13,6 +13,7 @@ export interface SocialPost {
   likes: string[]; // user IDs who liked
   comments: SocialComment[];
   shares: number;
+  sharedBy: string[]; // user IDs who shared
   createdAt: string;
   category: 'general' | 'technical' | 'safety' | 'announcement';
 }
@@ -47,14 +48,14 @@ interface SocialState {
   savedDocuments: SavedDocument[];
 
   // Social actions
-  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'createdAt'>) => void;
+  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'sharedBy' | 'createdAt'>) => void;
   deletePost: (postId: string) => void;
   toggleLike: (postId: string, userId: string) => void;
   addComment: (postId: string, comment: Omit<SocialComment, 'id' | 'createdAt' | 'likes'>) => void;
   deleteComment: (postId: string, commentId: string) => void;
   editComment: (postId: string, commentId: string, newContent: string) => void;
   toggleCommentLike: (postId: string, commentId: string, userId: string) => void;
-  sharePost: (postId: string) => void;
+  sharePost: (postId: string, userId: string) => void;
 
   // Document actions
   saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -85,6 +86,7 @@ const SEED_POSTS: SocialPost[] = [
       }
     ],
     shares: 3,
+    sharedBy: ['2'],
     createdAt: new Date(Date.now() - 7200000).toISOString(),
     category: 'announcement'
   },
@@ -99,6 +101,7 @@ const SEED_POSTS: SocialPost[] = [
     likes: ['1'],
     comments: [],
     shares: 5,
+    sharedBy: ['1'],
     createdAt: new Date(Date.now() - 86400000).toISOString(),
     category: 'safety'
   },
@@ -113,6 +116,7 @@ const SEED_POSTS: SocialPost[] = [
     likes: [],
     comments: [],
     shares: 0,
+    sharedBy: [],
     createdAt: new Date(Date.now() - 172800000).toISOString(),
     category: 'announcement'
   }
@@ -131,6 +135,7 @@ export const useSocialStore = create<SocialState>()(
           likes: [],
           comments: [],
           shares: 0,
+          sharedBy: [],
           createdAt: new Date().toISOString()
         }, ...state.posts]
       })),
@@ -200,8 +205,16 @@ export const useSocialStore = create<SocialState>()(
         })
       })),
 
-      sharePost: (postId) => set(state => ({
-        posts: state.posts.map(p => p.id === postId ? { ...p, shares: p.shares + 1 } : p)
+      sharePost: (postId, userId) => set(state => ({
+        posts: state.posts.map(p => {
+          if (p.id !== postId) return p;
+          const alreadyShared = (p.sharedBy || []).includes(userId);
+          return {
+            ...p,
+            shares: alreadyShared ? p.shares : p.shares + 1,
+            sharedBy: alreadyShared ? p.sharedBy : [...(p.sharedBy || []), userId]
+          };
+        })
       })),
 
       saveDocument: (doc) => set(state => ({
