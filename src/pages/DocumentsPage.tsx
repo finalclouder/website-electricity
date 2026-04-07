@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Trash2, Download, Clock, Search, Filter, Plus, Eye, CheckCircle2, Edit3, AlertCircle, X, MapPin, Users, Wrench, Calendar, Zap } from 'lucide-react';
+import { FileText, Trash2, Download, Clock, Search, Filter, Plus, Eye, CheckCircle2, Edit3, AlertCircle, X, MapPin, Users, Wrench, Calendar, Zap, Copy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
@@ -18,7 +18,7 @@ function formatDate(dateStr: string): string {
   });
 }
 
-export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void }> = ({ onViewProfile }) => {
+export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void; onTabChange?: (tab: string) => void }> = ({ onViewProfile, onTabChange }) => {
   const { user } = useAuthStore();
   const { savedDocuments, saveDocument, deleteDocument, updateDocument } = useSocialStore();
   const { data } = useStore();
@@ -59,8 +59,33 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void 
     try {
       const parsed = JSON.parse(doc.dataSnapshot);
       useStore.getState().setData(parsed);
+      onTabChange?.('patctc');
     } catch {
       alert('Không thể tải dữ liệu');
+    }
+  };
+
+  // Clone another user's document into editor as own draft
+  const handleClone = (doc: SavedDocument) => {
+    if (!user) return;
+    try {
+      const parsed = JSON.parse(doc.dataSnapshot);
+      useStore.getState().setData(parsed);
+      // Save as own draft immediately
+      const title = `[Sao chép] ${doc.title}`;
+      const description = doc.description;
+      saveDocument({
+        title,
+        description,
+        authorId: user.id,
+        authorName: user.name,
+        dataSnapshot: JSON.stringify(parsed),
+        status: 'draft',
+        tags: doc.tags,
+      });
+      onTabChange?.('patctc');
+    } catch {
+      alert('Không thể sao chép tài liệu');
     }
   };
 
@@ -167,10 +192,19 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void 
                   <button
                     onClick={() => handleLoad(doc)}
                     className="p-2 hover:bg-green-50 rounded-lg text-green-600 transition-colors"
-                    title="Tải về / Mở"
+                    title="Tải về và mở"
                   >
                     <Download size={16} />
                   </button>
+                  {doc.authorId !== user?.id && (
+                    <button
+                      onClick={() => handleClone(doc)}
+                      className="p-2 hover:bg-purple-50 rounded-lg text-purple-600 transition-colors"
+                      title="Sao chép về của tôi"
+                    >
+                      <Copy size={16} />
+                    </button>
+                  )}
                   {user?.role === 'admin' && doc.status !== 'approved' && (
                     <button
                       onClick={() => updateDocument(doc.id, { status: 'approved' })}
@@ -296,11 +330,19 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void 
                 <button onClick={() => { setPreviewDoc(null); setPreviewData(null); }} className="px-4 py-2.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-600 text-sm font-medium rounded-xl transition-all">
                   Đóng
                 </button>
+                {previewDoc.authorId !== user?.id && (
+                  <button
+                    onClick={() => { handleClone(previewDoc); setPreviewDoc(null); setPreviewData(null); }}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                  >
+                    <Copy size={14} /> Sao chép
+                  </button>
+                )}
                 <button
                   onClick={() => { handleLoad(previewDoc); setPreviewDoc(null); setPreviewData(null); }}
                   className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
                 >
-                  <Download size={14} /> Mở phương án
+                  <Download size={14} /> Tải về & Mở
                 </button>
               </div>
             </div>

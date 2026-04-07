@@ -84,9 +84,9 @@ export default function App() {
     <MainLayout activeTab={activeTab} onTabChange={handleTabChange}>
       {activeTab === 'patctc' && <PATCTCEditorPage />}
       {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
-      {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} />}
-      {activeTab === 'profile' && <ProfilePage />}
-      {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} />}
+      {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
+      {activeTab === 'profile' && <ProfilePage onTabChange={handleTabChange} />}
+      {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} onTabChange={handleTabChange} />}
       {activeTab === 'admin' && <AdminPage />}
     </MainLayout>
   );

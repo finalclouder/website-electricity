@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, MapPin, Users, Wrench, Calendar, Zap } from 'lucide-react';
+import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, MapPin, Users, Wrench, Calendar, Zap, Copy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
@@ -21,9 +21,9 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('vi-VN');
 }
 
-export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void }> = ({ viewingUserId, onBack }) => {
+export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void; onTabChange?: (tab: string) => void }> = ({ viewingUserId, onBack, onTabChange }) => {
   const { user, updateProfile, changePassword, getAllUsers } = useAuthStore();
-  const { posts, savedDocuments } = useSocialStore();
+  const { posts, savedDocuments, saveDocument } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
 
   // Determine if we're viewing another user's profile
@@ -115,14 +115,36 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     updateProfile({ avatar: '' });
   };
 
-  // Load a document into the editor
+  // Load a document into the editor and navigate
   const handleLoadDoc = (dataSnapshot: string) => {
     try {
       const parsed = JSON.parse(dataSnapshot);
       useStore.getState().setData(parsed);
-      alert('Đã tải phương án vào trình soạn thảo! Chuyển sang tab "Lập phương án" để xem.');
+      onTabChange?.('patctc');
     } catch {
       alert('Không thể tải dữ liệu');
+    }
+  };
+
+  // Clone another user's document as own draft and navigate to editor
+  const handleCloneDoc = (doc: SavedDocument) => {
+    if (!user) return;
+    try {
+      const parsed = JSON.parse(doc.dataSnapshot);
+      useStore.getState().setData(parsed);
+      const title = `[Sao chép] ${doc.title}`;
+      saveDocument({
+        title,
+        description: doc.description,
+        authorId: user.id,
+        authorName: user.name,
+        dataSnapshot: JSON.stringify(parsed),
+        status: 'draft',
+        tags: doc.tags,
+      });
+      onTabChange?.('patctc');
+    } catch {
+      alert('Không thể sao chép tài liệu');
     }
   };
 
@@ -536,7 +558,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         </span>
                       </div>
                     </div>
-                    {/* Preview + Load buttons */}
+                    {/* Preview + Load + Clone buttons */}
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         onClick={() => openPreview(doc)}
@@ -546,13 +568,23 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         <Eye size={14} />
                         <span className="hidden sm:inline">Xem trước</span>
                       </button>
+                      {isViewingOther && (
+                        <button
+                          onClick={() => handleCloneDoc(doc)}
+                          className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                          title="Sao chép về của tôi"
+                        >
+                          <Copy size={14} />
+                          <span className="hidden sm:inline">Sao chép</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => handleLoadDoc(doc.dataSnapshot)}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
-                        title={isViewingOther ? 'Tải về và chỉnh sửa' : 'Mở trong trình soạn thảo'}
+                        title={isViewingOther ? 'Tải về và mở' : 'Mở trong trình soạn thảo'}
                       >
                         <Download size={14} />
-                        <span className="hidden sm:inline">{isViewingOther ? 'Tải về' : 'Mở'}</span>
+                        <span className="hidden sm:inline">{isViewingOther ? 'Tải về & Mở' : 'Mở'}</span>
                       </button>
                     </div>
                   </div>
@@ -864,6 +896,18 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 >
                   Đóng
                 </button>
+                {isViewingOther && (
+                  <button
+                    onClick={() => {
+                      handleCloneDoc(previewDoc);
+                      setPreviewDoc(null);
+                      setPreviewData(null);
+                    }}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                  >
+                    <Copy size={14} /> Sao chép
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     handleLoadDoc(previewDoc.dataSnapshot);

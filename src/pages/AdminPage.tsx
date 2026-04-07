@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye } from 'lucide-react';
+import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play } from 'lucide-react';
 import { useAuthStore, User } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
@@ -10,7 +10,7 @@ function getInitials(name: string): string {
 
 // ============ Landing Page Editor Component ============
 const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'error') => void }> = ({ showNotif }) => {
-  const { config, updateConfig, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, resetToDefault } = useLandingStore();
+  const { config, updateConfig, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, addGalleryItem, updateGalleryItem, removeGalleryItem, addVideoItem, updateVideoItem, removeVideoItem, updateCustomerCareBanner, resetToDefault } = useLandingStore();
   const [activeSection, setActiveSection] = useState('general');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -20,6 +20,9 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
     { id: 'quickactions', label: 'Quick Actions', icon: Zap },
     { id: 'features', label: 'Tính năng', icon: BarChart3 },
     { id: 'about', label: 'Giới thiệu', icon: Type },
+    { id: 'gallery', label: 'Thư viện ảnh', icon: Image },
+    { id: 'videos', label: 'Video', icon: Video },
+    { id: 'banner', label: 'Banner CSKH', icon: Phone },
     { id: 'contact', label: 'Liên hệ', icon: Phone },
     { id: 'footer', label: 'Footer', icon: FileText },
   ];
@@ -143,6 +146,31 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                   {slide.imageUrl && (
                     <div className="mt-2 h-20 rounded-lg overflow-hidden bg-zinc-100">
                       <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600 mb-1 block">Loại media</label>
+                    <div className="flex gap-2">
+                      <button onClick={() => updateHeroSlide(slide.id, { mediaType: 'image' })}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                          (slide.mediaType || 'image') === 'image' ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-zinc-50 text-zinc-500 border border-zinc-200'
+                        }`}>
+                        <Image size={13} /> Ảnh
+                      </button>
+                      <button onClick={() => updateHeroSlide(slide.id, { mediaType: 'video' })}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                          slide.mediaType === 'video' ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-zinc-50 text-zinc-500 border border-zinc-200'
+                        }`}>
+                        <Play size={13} /> Video
+                      </button>
+                    </div>
+                  </div>
+                  {slide.mediaType === 'video' && (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
+                      <input value={slide.videoUrl || ''} onChange={e => updateHeroSlide(slide.id, { videoUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
                     </div>
                   )}
                 </div>
@@ -292,6 +320,133 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
             <div>
               <label className="text-xs font-semibold text-zinc-600 mb-1 block">Giờ làm việc</label>
               <input value={config.contact.workHours} onChange={e => updateContact({ workHours: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== GALLERY ===== */}
+      {activeSection === 'gallery' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-zinc-800 flex items-center gap-2"><Image size={16} className="text-amber-500" /> Thư viện ảnh ({config.gallery.length})</h3>
+          </div>
+          {config.gallery.map((item, idx) => (
+            <div key={item.id} className="bg-white rounded-xl border border-zinc-200 p-4">
+              <div className="flex items-start gap-4">
+                <div className="w-24 h-20 rounded-lg overflow-hidden bg-zinc-100 flex-shrink-0">
+                  <img src={item.imageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL ảnh</label>
+                    <input value={item.imageUrl} onChange={e => updateGalleryItem(item.id, { imageUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600 mb-1 block">Chú thích</label>
+                      <input value={item.caption} onChange={e => updateGalleryItem(item.id, { caption: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600 mb-1 block">Danh mục</label>
+                      <input value={item.category} onChange={e => updateGalleryItem(item.id, { category: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => removeGalleryItem(item.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+          <button onClick={addGalleryItem} className="w-full py-3 bg-zinc-50 hover:bg-zinc-100 border-2 border-dashed border-zinc-300 rounded-xl text-sm font-semibold text-zinc-500 flex items-center justify-center gap-2 transition-all">
+            <Plus size={16} /> Thêm ảnh mới
+          </button>
+        </div>
+      )}
+
+      {/* ===== VIDEOS ===== */}
+      {activeSection === 'videos' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-zinc-800 flex items-center gap-2"><Video size={16} className="text-red-500" /> Video ({config.videos.length})</h3>
+          </div>
+          {config.videos.map((video, idx) => (
+            <div key={video.id} className="bg-white rounded-xl border border-zinc-200 p-4">
+              <div className="flex items-start gap-4">
+                <div className="w-32 h-20 rounded-lg overflow-hidden bg-zinc-100 flex-shrink-0 relative">
+                  <img src={video.thumbnailUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                    <Play size={20} className="text-white" fill="white" />
+                  </div>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600 mb-1 block">Tiêu đề</label>
+                    <input value={video.title} onChange={e => updateVideoItem(video.id, { title: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
+                      <input value={video.videoUrl} onChange={e => updateVideoItem(video.id, { videoUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600 mb-1 block">Thời lượng</label>
+                      <input value={video.duration} onChange={e => updateVideoItem(video.id, { duration: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="5:30" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Thumbnail</label>
+                    <input value={video.thumbnailUrl} onChange={e => updateVideoItem(video.id, { thumbnailUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                  </div>
+                </div>
+                <button onClick={() => removeVideoItem(video.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+          <button onClick={addVideoItem} className="w-full py-3 bg-zinc-50 hover:bg-zinc-100 border-2 border-dashed border-zinc-300 rounded-xl text-sm font-semibold text-zinc-500 flex items-center justify-center gap-2 transition-all">
+            <Plus size={16} /> Thêm video mới
+          </button>
+        </div>
+      )}
+
+      {/* ===== CUSTOMER CARE BANNER ===== */}
+      {activeSection === 'banner' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-zinc-200 p-5">
+            <h3 className="text-sm font-bold text-zinc-800 mb-4 flex items-center gap-2"><Image size={16} className="text-blue-500" /> Banner Chăm sóc khách hàng</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL ảnh nền</label>
+                <input value={config.customerCareBanner.imageUrl} onChange={e => updateCustomerCareBanner({ imageUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                {config.customerCareBanner.imageUrl && (
+                  <div className="mt-2 h-24 rounded-lg overflow-hidden bg-zinc-100">
+                    <img src={config.customerCareBanner.imageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1 block">Tiêu đề</label>
+                  <input value={config.customerCareBanner.title} onChange={e => updateCustomerCareBanner({ title: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1 block">Phụ đề</label>
+                  <input value={config.customerCareBanner.subtitle} onChange={e => updateCustomerCareBanner({ subtitle: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1 block">Hotline</label>
+                  <input value={config.customerCareBanner.hotline} onChange={e => updateCustomerCareBanner({ hotline: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1 block">Email</label>
+                  <input value={config.customerCareBanner.email} onChange={e => updateCustomerCareBanner({ email: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-zinc-600 mb-1 block">Nút CTA</label>
+                <input value={config.customerCareBanner.ctaText} onChange={e => updateCustomerCareBanner({ ctaText: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
             </div>
           </div>
         </div>

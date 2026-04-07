@@ -9,6 +9,8 @@ export interface HeroSlide {
   subtitle: string;
   bgOverlay: string;
   imageUrl: string;
+  videoUrl?: string; // YouTube/mp4 URL for video background
+  mediaType: 'image' | 'video';
 }
 
 export interface QuickAction {
@@ -47,6 +49,21 @@ export interface ContactInfo {
   personalEmail: string;
 }
 
+export interface GalleryItem {
+  id: string;
+  imageUrl: string;
+  caption: string;
+  category: string;
+}
+
+export interface VideoItem {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  videoUrl: string;
+  duration: string;
+}
+
 export interface LandingConfig {
   // Top banner
   bannerText: string;
@@ -71,6 +88,20 @@ export interface LandingConfig {
   aboutChecklist: string[];
   // Contact info
   contact: ContactInfo;
+  // Gallery
+  gallery: GalleryItem[];
+  // Videos
+  videos: VideoItem[];
+  // Customer care banner
+  customerCareBanner: {
+    imageUrl: string;
+    title: string;
+    subtitle: string;
+    hotline: string;
+    email: string;
+    ctaText: string;
+    ctaUrl: string;
+  };
   // Footer
   footerCopyright: string;
   footerDeveloper: string;
@@ -92,6 +123,7 @@ const DEFAULT_CONFIG: LandingConfig = {
       subtitle: 'Tổng công ty Điện lực miền Bắc đã chủ động triển khai nhiều giải pháp kỹ thuật và vận hành để đáp ứng nhu cầu phụ tải tăng cao.',
       bgOverlay: 'linear-gradient(135deg, rgba(13,46,107,0.7) 0%, rgba(22,67,150,0.5) 100%)',
       imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1600&q=80',
+      mediaType: 'image' as const,
     },
     {
       id: '2',
@@ -101,6 +133,7 @@ const DEFAULT_CONFIG: LandingConfig = {
       subtitle: 'Áp dụng quy trình thi công hotline theo tiêu chuẩn quốc tế, đảm bảo an toàn tuyệt đối cho người lao động.',
       bgOverlay: 'linear-gradient(135deg, rgba(5,46,22,0.7) 0%, rgba(22,101,52,0.5) 100%)',
       imageUrl: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80',
+      mediaType: 'image' as const,
     },
     {
       id: '3',
@@ -110,6 +143,8 @@ const DEFAULT_CONFIG: LandingConfig = {
       subtitle: 'Hệ thống PATCTC Generator giúp tạo phương án hoàn chỉnh 14 trang, xuất PDF và Word chỉ trong vài phút.',
       bgOverlay: 'linear-gradient(135deg, rgba(30,27,75,0.7) 0%, rgba(67,56,202,0.5) 100%)',
       imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=1600&q=80',
+      videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
+      mediaType: 'video' as const,
     },
   ],
   quickActions: [
@@ -152,6 +187,28 @@ const DEFAULT_CONFIG: LandingConfig = {
     personalPhone: '0393.954.568',
     personalEmail: 'dungdong333@gmail.com',
   },
+  gallery: [
+    { id: 'g1', imageUrl: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=800&q=80', caption: 'Thi công sửa chữa hotline trên đường dây 22kV', category: 'Thi công' },
+    { id: 'g2', imageUrl: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&q=80', caption: 'Kiểm tra an toàn trước khi thi công', category: 'An toàn' },
+    { id: 'g3', imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&q=80', caption: 'Đội ngũ kỹ thuật viên chuyên nghiệp', category: 'Nhân sự' },
+    { id: 'g4', imageUrl: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?w=800&q=80', caption: 'Trang thiết bị thi công hiện đại', category: 'Thiết bị' },
+    { id: 'g5', imageUrl: 'https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=800&q=80', caption: 'Hệ thống lưới điện trung áp', category: 'Hạ tầng' },
+    { id: 'g6', imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=800&q=80', caption: 'Trạm biến áp phân phối', category: 'Hạ tầng' },
+  ],
+  videos: [
+    { id: 'v1', title: 'Quy trình thi công Hotline an toàn', thumbnailUrl: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=600&q=80', videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4', duration: '5:30' },
+    { id: 'v2', title: 'Hướng dẫn sử dụng PATCTC Generator', thumbnailUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=600&q=80', videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4', duration: '8:45' },
+    { id: 'v3', title: 'An toàn điện - Những điều cần biết', thumbnailUrl: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=600&q=80', videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4', duration: '12:20' },
+  ],
+  customerCareBanner: {
+    imageUrl: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=1600&q=80',
+    title: 'Trung tâm Chăm sóc Khách hàng',
+    subtitle: 'Hỗ trợ kỹ thuật 24/7 - Giải đáp mọi thắc mắc về hệ thống',
+    hotline: '1900.6769',
+    email: 'cskh@npc.com.vn',
+    ctaText: 'Liên hệ hỗ trợ',
+    ctaUrl: '#lien-he',
+  },
   footerCopyright: '© 2026 PATCTC Generator. Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh.',
   footerDeveloper: 'Phát triển bởi DungDT293',
 };
@@ -168,6 +225,13 @@ interface LandingStore {
   updateAboutChecklist: (index: number, value: string) => void;
   addAboutChecklist: () => void;
   removeAboutChecklist: (index: number) => void;
+  addGalleryItem: () => void;
+  updateGalleryItem: (id: string, updates: Partial<GalleryItem>) => void;
+  removeGalleryItem: (id: string) => void;
+  addVideoItem: () => void;
+  updateVideoItem: (id: string, updates: Partial<VideoItem>) => void;
+  removeVideoItem: (id: string) => void;
+  updateCustomerCareBanner: (updates: Partial<LandingConfig['customerCareBanner']>) => void;
   resetToDefault: () => void;
 }
 
@@ -198,6 +262,7 @@ export const useLandingStore = create<LandingStore>()(
             subtitle: 'Mô tả slide mới',
             bgOverlay: 'linear-gradient(135deg, rgba(13,46,107,0.7) 0%, rgba(22,67,150,0.5) 100%)',
             imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1600&q=80',
+            mediaType: 'image' as const,
           }]
         }
       })),
@@ -247,6 +312,66 @@ export const useLandingStore = create<LandingStore>()(
         config: {
           ...state.config,
           aboutChecklist: state.config.aboutChecklist.filter((_, i) => i !== index)
+        }
+      })),
+
+      addGalleryItem: () => set(state => ({
+        config: {
+          ...state.config,
+          gallery: [...state.config.gallery, {
+            id: Date.now().toString(),
+            imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=800&q=80',
+            caption: 'Hình ảnh mới',
+            category: 'Chung',
+          }]
+        }
+      })),
+
+      updateGalleryItem: (id, updates) => set(state => ({
+        config: {
+          ...state.config,
+          gallery: state.config.gallery.map(g => g.id === id ? { ...g, ...updates } : g)
+        }
+      })),
+
+      removeGalleryItem: (id) => set(state => ({
+        config: {
+          ...state.config,
+          gallery: state.config.gallery.filter(g => g.id !== id)
+        }
+      })),
+
+      addVideoItem: () => set(state => ({
+        config: {
+          ...state.config,
+          videos: [...state.config.videos, {
+            id: Date.now().toString(),
+            title: 'Video mới',
+            thumbnailUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=600&q=80',
+            videoUrl: '',
+            duration: '0:00',
+          }]
+        }
+      })),
+
+      updateVideoItem: (id, updates) => set(state => ({
+        config: {
+          ...state.config,
+          videos: state.config.videos.map(v => v.id === id ? { ...v, ...updates } : v)
+        }
+      })),
+
+      removeVideoItem: (id) => set(state => ({
+        config: {
+          ...state.config,
+          videos: state.config.videos.filter(v => v.id !== id)
+        }
+      })),
+
+      updateCustomerCareBanner: (updates) => set(state => ({
+        config: {
+          ...state.config,
+          customerCareBanner: { ...state.config.customerCareBanner, ...updates }
         }
       })),
 

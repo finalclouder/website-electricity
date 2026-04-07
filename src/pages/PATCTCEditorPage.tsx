@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FileDown, FileText, Loader2, Save, CheckCircle2, FolderOpen, Eye, Download, Trash2, Clock, ChevronDown, ChevronRight, X, Plus, MapPin, Users, Wrench, Calendar, Zap, FilePlus2 } from 'lucide-react';
+import { FileDown, FileText, Loader2, Save, CheckCircle2, FolderOpen, Eye, Download, Trash2, Clock, ChevronDown, ChevronRight, X, Plus, MapPin, Users, Wrench, Calendar, Zap, FilePlus2, Copy } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
@@ -63,7 +63,52 @@ export const PATCTCEditorPage: React.FC = () => {
     }
   };
 
+  // Clone another user's document as own draft
+  const handleCloneDoc = (doc: SavedDocument) => {
+    if (!user) return;
+    try {
+      const parsed = JSON.parse(doc.dataSnapshot);
+      useStore.getState().setData(parsed);
+      const title = `[Sao chép] ${doc.title}`;
+      saveDocument({
+        title,
+        description: doc.description,
+        authorId: user.id,
+        authorName: user.name,
+        dataSnapshot: JSON.stringify(parsed),
+        status: 'draft',
+        tags: doc.tags,
+      });
+      setPreviewDoc(null);
+      setPreviewData(null);
+      setShowDocsPanel(false);
+      setSaveNotif(true);
+      setTimeout(() => setSaveNotif(false), 2000);
+    } catch {
+      alert('Không thể sao chép tài liệu');
+    }
+  };
+
   // === Auto-sync effects ===
+
+  // Auto-save debounced (save current data after each change, 3s debounce)
+  useEffect(() => {
+    if (!user) return;
+    const timer = setTimeout(() => {
+      const currentData = useStore.getState().data;
+      const title = `PA ${currentData.soVb} - ĐZ ${currentData.dz} cột ${currentData.cot}`;
+      const description = currentData.jobItems.join(', ');
+      const existingDoc = savedDocuments.find(d => d.authorId === user.id && d.title === title);
+      if (existingDoc) {
+        updateDocument(existingDoc.id, {
+          description,
+          dataSnapshot: JSON.stringify(currentData),
+          tags: [currentData.dz, `cột ${currentData.cot}`, currentData.donViThiCong]
+        });
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [data]);
 
   // Auto-seed risk tables when empty
   useEffect(() => {
@@ -380,6 +425,13 @@ export const PATCTCEditorPage: React.FC = () => {
                           >
                             <Download size={13} />
                           </button>
+                          <button
+                            onClick={() => handleCloneDoc(doc)}
+                            className="p-1.5 rounded-lg text-zinc-300 hover:text-purple-500 hover:bg-purple-50 transition-all"
+                            title="Sao chép về của tôi"
+                          >
+                            <Copy size={13} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -606,6 +658,14 @@ export const PATCTCEditorPage: React.FC = () => {
                 <button onClick={() => { setPreviewDoc(null); setPreviewData(null); }} className="px-4 py-2.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-600 text-sm font-medium rounded-xl transition-all">
                   Đóng
                 </button>
+                {previewDoc.authorId !== user?.id && (
+                  <button
+                    onClick={() => handleCloneDoc(previewDoc)}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                  >
+                    <Copy size={14} /> Sao chép
+                  </button>
+                )}
                 <button
                   onClick={() => handleLoadDoc(previewDoc)}
                   className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
