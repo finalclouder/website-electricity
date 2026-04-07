@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FileDown, FileText, Loader2, Save, CheckCircle2, FolderOpen, Eye, Download, Trash2, Clock, ChevronDown, ChevronRight, X, Plus, MapPin, Users, Wrench, Calendar, Zap } from 'lucide-react';
+import { FileDown, FileText, Loader2, Save, CheckCircle2, FolderOpen, Eye, Download, Trash2, Clock, ChevronDown, ChevronRight, X, Plus, MapPin, Users, Wrench, Calendar, Zap, FilePlus2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
@@ -426,25 +426,37 @@ export const PATCTCEditorPage: React.FC = () => {
             </div>
           )}
 
-          {/* Save button */}
-          <button
-            onClick={handleSave}
-            className={`w-full mb-2 py-2.5 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm ${
-              saveNotif
-                ? 'bg-green-100 text-green-700 border border-green-300'
-                : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
-            }`}
-          >
-            {saveNotif ? (
-              <>
-                <CheckCircle2 size={16} /> Đã lưu!
-              </>
-            ) : (
-              <>
-                <Save size={16} /> Lưu phương án
-              </>
-            )}
-          </button>
+          {/* Save + New buttons */}
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={handleSave}
+              className={`flex-1 py-2.5 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm ${
+                saveNotif
+                  ? 'bg-green-100 text-green-700 border border-green-300'
+                  : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
+              }`}
+            >
+              {saveNotif ? (
+                <>
+                  <CheckCircle2 size={16} /> Đã lưu!
+                </>
+              ) : (
+                <>
+                  <Save size={16} /> Lưu PA
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('Tạo phương án mới? Dữ liệu chưa lưu sẽ bị mất.')) {
+                  useStore.getState().resetData();
+                }
+              }}
+              className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+            >
+              <FilePlus2 size={16} /> Mới
+            </button>
+          </div>
 
           <div className="flex gap-2">
             <button
