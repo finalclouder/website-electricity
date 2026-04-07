@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play } from 'lucide-react';
+import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2 } from 'lucide-react';
 import { useAuthStore, User } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
+import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, videoToBase64, formatFileSize } from '../utils/mediaUpload';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -13,6 +14,70 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
   const { config, updateConfig, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, addGalleryItem, updateGalleryItem, removeGalleryItem, addVideoItem, updateVideoItem, removeVideoItem, updateCustomerCareBanner, resetToDefault } = useLandingStore();
   const [activeSection, setActiveSection] = useState('general');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
+
+  // Generic file upload handler
+  const handleImageUpload = async (
+    accept: string,
+    compressFn: (file: File) => Promise<string>,
+    onResult: (dataUrl: string) => void,
+    uploadKey: string
+  ) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploading(uploadKey);
+      try {
+        const dataUrl = await compressFn(file);
+        onResult(dataUrl);
+        showNotif(`Đã tải lên ${file.name} (${formatFileSize(file.size)})`);
+      } catch (err: any) {
+        showNotif(err.message || 'Lỗi tải file', 'error');
+      } finally {
+        setUploading(null);
+      }
+    };
+    input.click();
+  };
+
+  const handleVideoUpload = async (
+    onResult: (dataUrl: string) => void,
+    uploadKey: string
+  ) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/mp4,video/webm,video/ogg';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploading(uploadKey);
+      try {
+        const dataUrl = await videoToBase64(file);
+        onResult(dataUrl);
+        showNotif(`Đã tải lên video ${file.name} (${formatFileSize(file.size)})`);
+      } catch (err: any) {
+        showNotif(err.message || 'Lỗi tải video', 'error');
+      } finally {
+        setUploading(null);
+      }
+    };
+    input.click();
+  };
+
+  // Upload button component
+  const UploadBtn: React.FC<{ label: string; uploadKey: string; accept?: string; onUpload: () => void }> = ({ label, uploadKey, onUpload }) => (
+    <button
+      onClick={onUpload}
+      disabled={uploading === uploadKey}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-[11px] font-bold rounded-lg border border-blue-200 transition-all disabled:opacity-50"
+    >
+      {uploading === uploadKey ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+      {uploading === uploadKey ? 'Đang xử lý...' : label}
+    </button>
+  );
 
   const sections = [
     { id: 'general', label: 'Tổng quan', icon: Globe },
@@ -142,7 +207,10 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL ảnh nền</label>
-                  <input value={slide.imageUrl} onChange={e => updateHeroSlide(slide.id, { imageUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://..." />
+                  <div className="flex gap-2 mb-1">
+                    <input value={slide.imageUrl} onChange={e => updateHeroSlide(slide.id, { imageUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://..." />
+                    <UploadBtn label="Tải ảnh lên" uploadKey={`hero-img-${slide.id}`} onUpload={() => handleImageUpload('image/*', compressHeroImage, (url) => updateHeroSlide(slide.id, { imageUrl: url }), `hero-img-${slide.id}`)} />
+                  </div>
                   {slide.imageUrl && (
                     <div className="mt-2 h-20 rounded-lg overflow-hidden bg-zinc-100">
                       <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />
@@ -170,7 +238,11 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                   {slide.mediaType === 'video' && (
                     <div>
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
-                      <input value={slide.videoUrl || ''} onChange={e => updateHeroSlide(slide.id, { videoUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
+                      <div className="flex gap-2">
+                        <input value={slide.videoUrl || ''} onChange={e => updateHeroSlide(slide.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
+                        <UploadBtn label="Tải video lên" uploadKey={`hero-vid-${slide.id}`} onUpload={() => handleVideoUpload((url) => updateHeroSlide(slide.id, { videoUrl: url }), `hero-vid-${slide.id}`)} />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-1">Video tải lên tối đa 5MB. Video lớn hơn hãy dùng URL bên ngoài.</p>
                     </div>
                   )}
                 </div>
@@ -340,7 +412,10 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                 <div className="flex-1 space-y-2">
                   <div>
                     <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL ảnh</label>
-                    <input value={item.imageUrl} onChange={e => updateGalleryItem(item.id, { imageUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                    <div className="flex gap-2">
+                      <input value={item.imageUrl} onChange={e => updateGalleryItem(item.id, { imageUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                      <UploadBtn label="Tải lên" uploadKey={`gallery-${item.id}`} onUpload={() => handleImageUpload('image/*', compressGalleryImage, (url) => updateGalleryItem(item.id, { imageUrl: url }), `gallery-${item.id}`)} />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -386,7 +461,11 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2">
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
-                      <input value={video.videoUrl} onChange={e => updateVideoItem(video.id, { videoUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
+                      <div className="flex gap-2">
+                        <input value={video.videoUrl} onChange={e => updateVideoItem(video.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
+                        <UploadBtn label="Tải video" uploadKey={`video-file-${video.id}`} onUpload={() => handleVideoUpload((url) => updateVideoItem(video.id, { videoUrl: url }), `video-file-${video.id}`)} />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Tải lên tối đa 5MB. Video lớn hãy dùng URL ngoài.</p>
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">Thời lượng</label>
@@ -395,7 +474,10 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Thumbnail</label>
-                    <input value={video.thumbnailUrl} onChange={e => updateVideoItem(video.id, { thumbnailUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                    <div className="flex gap-2">
+                      <input value={video.thumbnailUrl} onChange={e => updateVideoItem(video.id, { thumbnailUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                      <UploadBtn label="Tải ảnh" uploadKey={`video-thumb-${video.id}`} onUpload={() => handleImageUpload('image/*', compressThumbnail, (url) => updateVideoItem(video.id, { thumbnailUrl: url }), `video-thumb-${video.id}`)} />
+                    </div>
                   </div>
                 </div>
                 <button onClick={() => removeVideoItem(video.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"><Trash2 size={14} /></button>
@@ -416,7 +498,10 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL ảnh nền</label>
-                <input value={config.customerCareBanner.imageUrl} onChange={e => updateCustomerCareBanner({ imageUrl: e.target.value })} className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                <div className="flex gap-2 mb-1">
+                  <input value={config.customerCareBanner.imageUrl} onChange={e => updateCustomerCareBanner({ imageUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                  <UploadBtn label="Tải ảnh lên" uploadKey="banner-img" onUpload={() => handleImageUpload('image/*', compressBannerImage, (url) => updateCustomerCareBanner({ imageUrl: url }), 'banner-img')} />
+                </div>
                 {config.customerCareBanner.imageUrl && (
                   <div className="mt-2 h-24 rounded-lg overflow-hidden bg-zinc-100">
                     <img src={config.customerCareBanner.imageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.target as HTMLImageElement).style.display = 'none'} />

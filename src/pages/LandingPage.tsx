@@ -318,11 +318,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                 poster={s.imageUrl}
               />
             ) : (
-              <div className="absolute inset-0" style={{
-                backgroundImage: `url("${s.imageUrl}")`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              }} />
+              <img
+                src={s.imageUrl}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+                draggable={false}
+                onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
+              />
             )}
           </div>
         ))}
@@ -531,8 +533,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
             {filteredGallery.map((item) => (
               <div key={item.id}
                 onClick={() => setLightboxImage(item.imageUrl)}
-                className="relative group rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer aspect-[4/3]">
-                <img src={item.imageUrl} alt={item.caption} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                className="relative group rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer aspect-[4/3] bg-zinc-200">
+                <img src={item.imageUrl} alt={item.caption} loading="lazy" draggable={false}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
                   <p className="text-white text-xs font-semibold line-clamp-2">{item.caption}</p>
@@ -560,8 +565,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                   <div key={video.id}
                     onClick={() => setPlayingVideo(video.videoUrl)}
                     className="bg-white rounded-2xl border border-zinc-200 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer">
-                    <div className="relative aspect-video overflow-hidden">
-                      <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <div className="relative aspect-video overflow-hidden bg-zinc-200">
+                      <img src={video.thumbnailUrl} alt={video.title} loading="lazy" draggable={false}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
                       <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
                         <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
                           <Play size={28} className="text-[#164396] ml-1" fill="#164396" />
@@ -585,7 +593,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
       {/* ============ CUSTOMER CARE BANNER ============ */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
-          <img src={config.customerCareBanner.imageUrl} alt="" className="w-full h-full object-cover" />
+          <img src={config.customerCareBanner.imageUrl} alt="" className="w-full h-full object-cover" draggable={false} onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }} />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0d2e6b]/90 via-[#164396]/80 to-[#164396]/60" />
         </div>
         <div className="max-w-7xl mx-auto px-4 py-16 sm:py-20 relative z-10">
@@ -942,7 +950,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
           <button onClick={() => setLightboxImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
             <X size={24} className="text-white" />
           </button>
-          <img src={lightboxImage} alt="" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          <img src={lightboxImage} alt="" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" draggable={false} onClick={e => e.stopPropagation()} onError={e => { (e.target as HTMLImageElement).src = ''; }} />
         </div>
       )}
 
