@@ -21,7 +21,7 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('vi-VN');
 }
 
-export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserId }) => {
+export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void }> = ({ viewingUserId, onBack }) => {
   const { user, updateProfile, changePassword, getAllUsers } = useAuthStore();
   const { posts, savedDocuments } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
@@ -181,7 +181,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserI
       {/* Back button when viewing other user */}
       {isViewingOther && (
         <button
-          onClick={() => window.history.back()}
+          onClick={() => onBack ? onBack() : window.history.back()}
           className="mb-4 px-3 py-1.5 bg-white border border-zinc-200 rounded-xl text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2 transition-all"
         >
           <ArrowLeft size={14} /> Quay lại

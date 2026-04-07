@@ -13,6 +13,7 @@ export default function App() {
   const { isAuthenticated } = useAuthStore();
   const [activeTab, setActiveTab] = useState('patctc');
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [previousTab, setPreviousTab] = useState('social');
   const [showLanding, setShowLanding] = useState(true);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [initialRegister, setInitialRegister] = useState(false);
@@ -68,8 +69,14 @@ export default function App() {
   };
 
   const handleViewUserProfile = (userId: string) => {
+    setPreviousTab(activeTab);
     setViewingUserId(userId);
     setActiveTab('user-profile');
+  };
+
+  const handleBackFromProfile = () => {
+    setViewingUserId(null);
+    setActiveTab(previousTab);
   };
 
   // Main app with tab navigation
@@ -79,7 +86,7 @@ export default function App() {
       {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
       {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} />}
       {activeTab === 'profile' && <ProfilePage />}
-      {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} />}
+      {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} />}
       {activeTab === 'admin' && <AdminPage />}
     </MainLayout>
   );

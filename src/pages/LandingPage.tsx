@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Zap, Shield, FileText, Users, ChevronRight, Phone, Mail, MapPin, Clock, ArrowRight, CheckCircle2, BarChart3, Award, Cpu, Menu, X, ChevronLeft, Search, Globe, MessageSquare, PlusCircle, ClipboardList, BookOpen, ArrowUp, Send, User, ChevronUp } from 'lucide-react';
 import { useSocialStore } from '../store/useSocialStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useLandingStore } from '../store/useLandingStore';
+
+// Icon name to component map
+const ICON_MAP: Record<string, any> = { Zap, Shield, FileText, Users, BarChart3, Cpu, Award, PlusCircle, ClipboardList, BookOpen, MessageSquare, Phone, Mail, MapPin, Clock, Globe, Search };
 
 interface LandingPageProps {
   onEnter: (options?: { tab?: string; register?: boolean }) => void;
@@ -130,6 +134,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
   const statsRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
+  // Landing page config from store
+  const { config } = useLandingStore();
+
   // Dynamic data from stores
   const { posts, savedDocuments } = useSocialStore();
   const { getAllUsers } = useAuthStore();
@@ -202,7 +209,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
   // ===== Auto-slide =====
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentSlide(prev => (prev + 1) % HERO_SLIDES.length);
+      setCurrentSlide(prev => (prev + 1) % config.heroSlides.length);
     }, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -301,7 +308,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
     }, 3000);
   };
 
-  const slide = HERO_SLIDES[currentSlide];
+  const slide = config.heroSlides[currentSlide] || config.heroSlides[0];
 
   return (
     <div ref={pageRef} className="min-h-screen bg-white flex flex-col">
@@ -309,7 +316,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
       {/* ============ TOP BANNER ============ */}
       <div className="bg-[#164396] text-white text-center py-2 px-4">
         <h1 className="text-sm sm:text-base font-bold tracking-wide">
-          Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh
+          {config.bannerText}
         </h1>
       </div>
 
@@ -317,8 +324,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
       <div className="bg-[#0d2e6b] text-white text-[11px] py-1.5 px-4 hidden sm:block">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1"><Phone size={10} /> Hotline: <strong>1900.6769</strong></span>
-            <span className="flex items-center gap-1"><Mail size={10} /> Email: info@npc.com.vn</span>
+            <span className="flex items-center gap-1"><Phone size={10} /> Hotline: <strong>{config.utilityHotline}</strong></span>
+            <span className="flex items-center gap-1"><Mail size={10} /> Email: {config.utilityEmail}</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1 cursor-pointer hover:text-cyan-300 transition-colors"><Globe size={10} /> English</span>
@@ -338,8 +345,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
           {/* Logo */}
           <button onClick={scrollToTop} className="flex items-center gap-3 cursor-pointer">
             <div className="flex flex-col">
-              <h1 className="text-xl sm:text-2xl font-black text-[#164396] leading-tight tracking-tight">EVNNPC</h1>
-              <p className="text-[8px] sm:text-[9px] text-zinc-400 leading-tight uppercase tracking-[0.15em]">Tổng Công ty Điện lực miền Bắc</p>
+              <h1 className="text-xl sm:text-2xl font-black text-[#164396] leading-tight tracking-tight">{config.logoTitle}</h1>
+              <p className="text-[8px] sm:text-[9px] text-zinc-400 leading-tight uppercase tracking-[0.15em]">{config.logoSubtitle}</p>
             </div>
           </button>
 
@@ -431,12 +438,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
       {/* ============ HERO BANNER ============ */}
       <section id="trang-chu" className="relative overflow-hidden" style={{ minHeight: '420px' }}>
         {/* Background image with crossfade */}
-        {HERO_SLIDES.map((s, i) => (
+        {config.heroSlides.map((s, i) => (
           <div
             key={i}
             className="absolute inset-0 transition-opacity duration-1000"
             style={{
-              backgroundImage: `url("${s.image}")`,
+              backgroundImage: `url("${s.imageUrl}")`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               opacity: i === currentSlide ? 1 : 0,
@@ -446,7 +453,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
         {/* Dark overlay */}
         <div
           className="absolute inset-0 transition-all duration-700"
-          style={{ background: slide.bg }}
+          style={{ background: slide.bgOverlay }}
         />
 
         <div className="max-w-7xl mx-auto px-4 py-16 sm:py-20 lg:py-24 relative z-10">
@@ -471,7 +478,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
 
         {/* Slide indicators */}
         <div className="absolute bottom-6 right-8 flex gap-2 z-10">
-          {HERO_SLIDES.map((_, i) => (
+          {config.heroSlides.map((_, i) => (
             <button
               key={i}
               onClick={() => setCurrentSlide(i)}
@@ -486,13 +493,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
 
         {/* Slide arrows */}
         <button
-          onClick={() => setCurrentSlide((currentSlide - 1 + HERO_SLIDES.length) % HERO_SLIDES.length)}
+          onClick={() => setCurrentSlide((currentSlide - 1 + config.heroSlides.length) % config.heroSlides.length)}
           className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-all hidden sm:flex"
         >
           <ChevronLeft size={20} className="text-white" />
         </button>
         <button
-          onClick={() => setCurrentSlide((currentSlide + 1) % HERO_SLIDES.length)}
+          onClick={() => setCurrentSlide((currentSlide + 1) % config.heroSlides.length)}
           className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-all hidden sm:flex"
         >
           <ChevronRight size={20} className="text-white" />
@@ -504,8 +511,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
         <div className="max-w-5xl mx-auto px-4">
           <div className="bg-white rounded-2xl shadow-xl border border-zinc-100 p-3 sm:p-4">
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
-              {QUICK_ACTIONS.map((action) => {
-                const Icon = action.icon;
+              {config.quickActions.map((action) => {
+                const Icon = ICON_MAP[action.iconName] || Zap;
                 return (
                   <button
                     key={action.label}
@@ -557,8 +564,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {FEATURES.map((feat) => {
-              const Icon = feat.icon;
+            {config.features.map((feat) => {
+              const Icon = ICON_MAP[feat.iconName] || FileText;
               return (
                 <div
                   key={feat.title}
@@ -586,19 +593,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                 <Shield size={12} /> Về chúng tôi
               </div>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 mb-4 leading-tight">
-                Đội Sửa chữa Hotline<br />
-                <span className="text-[#164396]">Công ty Điện lực Bắc Ninh</span>
+                {config.aboutTitle}<br />
+                <span className="text-[#164396]">{config.aboutSubtitle}</span>
               </h3>
               <p className="text-sm text-zinc-600 leading-relaxed mb-6">
-                Chúng tôi chuyên thực hiện công tác sửa chữa, bảo dưỡng lưới điện trung áp đang mang điện bằng phương pháp hotline. Với đội ngũ kỹ sư và công nhân lành nghề, chúng tôi cam kết đảm bảo an toàn tuyệt đối trong mọi hoạt động thi công.
+                {config.aboutDescription}
               </p>
               <ul className="space-y-3 mb-8">
-                {[
-                  'Thi công hotline trên lưới điện 22kV & 35kV',
-                  'Đội ngũ được đào tạo chuyên sâu về an toàn điện',
-                  'Trang thiết bị hiện đại, đạt tiêu chuẩn quốc tế',
-                  'Hệ thống quản lý phương án số hóa hoàn toàn',
-                ].map((item) => (
+                {config.aboutChecklist.map((item) => (
                   <li key={item} className="flex items-start gap-3 text-sm text-zinc-700">
                     <CheckCircle2 size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />
                     {item}
@@ -756,7 +758,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-zinc-900">Địa chỉ</div>
-                    <div className="text-sm text-zinc-500">Thành phố Bắc Ninh, tỉnh Bắc Ninh, Việt Nam</div>
+                    <div className="text-sm text-zinc-500">{config.contact.address}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl border border-zinc-100">
@@ -765,7 +767,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-zinc-900">Hotline</div>
-                    <div className="text-sm text-zinc-500">1900.6769 | 0393.954.568</div>
+                    <div className="text-sm text-zinc-500">{config.contact.hotline} | {config.contact.personalPhone}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl border border-zinc-100">
@@ -774,7 +776,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-zinc-900">Email</div>
-                    <div className="text-sm text-zinc-500">contact@patctc.vn | dungdong333@gmail.com</div>
+                    <div className="text-sm text-zinc-500">{config.contact.email} | {config.contact.personalEmail}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl border border-zinc-100">
@@ -783,7 +785,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-zinc-900">Giờ làm việc</div>
-                    <div className="text-sm text-zinc-500">Thứ 2 - Thứ 6: 7:30 - 17:00</div>
+                    <div className="text-sm text-zinc-500">{config.contact.workHours}</div>
                   </div>
                 </div>
               </div>
@@ -879,7 +881,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
                 <Phone size={20} className="text-cyan-300" />
                 <div>
                   <div className="text-[10px] text-blue-200 uppercase tracking-wider">Hotline</div>
-                  <div className="text-lg font-extrabold text-white">1900.6769</div>
+                  <div className="text-lg font-extrabold text-white">{config.contact.hotline}</div>
                 </div>
               </div>
               <button
@@ -906,8 +908,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div>
-                  <div className="text-lg font-black">EVNNPC</div>
-                  <div className="text-[9px] text-blue-300 uppercase tracking-widest">Tổng Công ty Điện lực miền Bắc</div>
+                  <div className="text-lg font-black">{config.logoTitle}</div>
+                  <div className="text-[9px] text-blue-300 uppercase tracking-widest">{config.logoSubtitle}</div>
                 </div>
               </div>
               <p className="text-xs text-blue-300 leading-relaxed">
@@ -958,15 +960,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
               <div className="space-y-3">
                 <div className="flex items-start gap-2.5">
                   <MapPin size={14} className="text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <span className="text-xs text-blue-300">Thành phố Bắc Ninh, tỉnh Bắc Ninh, Việt Nam</span>
+                  <span className="text-xs text-blue-300">{config.contact.address}</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Phone size={14} className="text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <span className="text-xs text-blue-300">1900.6769 | 0393.954.568</span>
+                  <span className="text-xs text-blue-300">{config.contact.hotline} | {config.contact.personalPhone}</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Mail size={14} className="text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <span className="text-xs text-blue-300">dungdong333@gmail.com</span>
+                  <span className="text-xs text-blue-300">{config.contact.personalEmail}</span>
                 </div>
               </div>
             </div>
@@ -974,10 +976,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
 
           <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-[11px] text-blue-400">
-              &copy; 2026 PATCTC Generator. Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh.
+              {config.footerCopyright}
             </p>
             <p className="text-[10px] text-blue-500">
-              Phát triển bởi DungDT293
+              {config.footerDeveloper}
             </p>
           </div>
         </div>

@@ -1,0 +1,257 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+export interface HeroSlide {
+  id: string;
+  badge: string;
+  badgeColor: string;
+  title: string;
+  subtitle: string;
+  bgOverlay: string;
+  imageUrl: string;
+}
+
+export interface QuickAction {
+  id: string;
+  label: string;
+  iconName: string;
+  color: string;
+  hoverColor: string;
+  tab: string;
+}
+
+export interface FeatureItem {
+  id: string;
+  title: string;
+  desc: string;
+  iconName: string;
+  color: string;
+}
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  excerpt: string;
+  date: string;
+  category: string;
+  catColor: string;
+}
+
+export interface ContactInfo {
+  orgName: string;
+  hotline: string;
+  email: string;
+  address: string;
+  workHours: string;
+  personalPhone: string;
+  personalEmail: string;
+}
+
+export interface LandingConfig {
+  // Top banner
+  bannerText: string;
+  // Utility bar
+  utilityHotline: string;
+  utilityEmail: string;
+  // Logo
+  logoTitle: string;
+  logoSubtitle: string;
+  // Hero slides
+  heroSlides: HeroSlide[];
+  // Quick actions
+  quickActions: QuickAction[];
+  // Stats
+  stats: { label: string; suffix: string }[];
+  // Features
+  features: FeatureItem[];
+  // About section
+  aboutTitle: string;
+  aboutSubtitle: string;
+  aboutDescription: string;
+  aboutChecklist: string[];
+  // Contact info
+  contact: ContactInfo;
+  // Footer
+  footerCopyright: string;
+  footerDeveloper: string;
+}
+
+// Default config
+const DEFAULT_CONFIG: LandingConfig = {
+  bannerText: 'Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh',
+  utilityHotline: '1900.6769',
+  utilityEmail: 'info@npc.com.vn',
+  logoTitle: 'EVNNPC',
+  logoSubtitle: 'Tổng Công ty Điện lực miền Bắc',
+  heroSlides: [
+    {
+      id: '1',
+      badge: 'TIN NỔI BẬT',
+      badgeColor: 'bg-red-600',
+      title: 'EVNNPC: Đảm bảo cung cấp điện an toàn, ổn định trong mùa nắng nóng 2026',
+      subtitle: 'Tổng công ty Điện lực miền Bắc đã chủ động triển khai nhiều giải pháp kỹ thuật và vận hành để đáp ứng nhu cầu phụ tải tăng cao.',
+      bgOverlay: 'linear-gradient(135deg, rgba(13,46,107,0.7) 0%, rgba(22,67,150,0.5) 100%)',
+      imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1600&q=80',
+    },
+    {
+      id: '2',
+      badge: 'AN TOÀN ĐIỆN',
+      badgeColor: 'bg-emerald-600',
+      title: 'Nâng cao công tác an toàn trong sửa chữa lưới điện đang mang điện',
+      subtitle: 'Áp dụng quy trình thi công hotline theo tiêu chuẩn quốc tế, đảm bảo an toàn tuyệt đối cho người lao động.',
+      bgOverlay: 'linear-gradient(135deg, rgba(5,46,22,0.7) 0%, rgba(22,101,52,0.5) 100%)',
+      imageUrl: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80',
+    },
+    {
+      id: '3',
+      badge: 'CÔNG NGHỆ',
+      badgeColor: 'bg-blue-600',
+      title: 'Số hóa phương án thi công - Xuất tài liệu nhanh chóng, chính xác',
+      subtitle: 'Hệ thống PATCTC Generator giúp tạo phương án hoàn chỉnh 14 trang, xuất PDF và Word chỉ trong vài phút.',
+      bgOverlay: 'linear-gradient(135deg, rgba(30,27,75,0.7) 0%, rgba(67,56,202,0.5) 100%)',
+      imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=1600&q=80',
+    },
+  ],
+  quickActions: [
+    { id: '1', label: 'Đăng tin', iconName: 'Zap', color: 'bg-blue-500', hoverColor: 'hover:bg-blue-600', tab: 'social' },
+    { id: '2', label: 'Lập phương án mới', iconName: 'PlusCircle', color: 'bg-red-500', hoverColor: 'hover:bg-red-600', tab: 'patctc' },
+    { id: '3', label: 'Mẫu PA TCTCBPAT', iconName: 'ClipboardList', color: 'bg-green-600', hoverColor: 'hover:bg-green-700', tab: 'documents' },
+    { id: '4', label: 'Cộng đồng', iconName: 'Users', color: 'bg-amber-500', hoverColor: 'hover:bg-amber-600', tab: 'social' },
+    { id: '5', label: 'Tài liệu', iconName: 'BookOpen', color: 'bg-slate-700', hoverColor: 'hover:bg-slate-800', tab: 'documents' },
+    { id: '6', label: 'Hỗ trợ trực tuyến', iconName: 'MessageSquare', color: 'bg-indigo-600', hoverColor: 'hover:bg-indigo-700', tab: 'social' },
+  ],
+  stats: [
+    { label: 'Phương án đã lập', suffix: '+' },
+    { label: 'Thành viên', suffix: '+' },
+    { label: 'An toàn thi công', suffix: '.9%' },
+    { label: 'Hỗ trợ kỹ thuật', suffix: '/7' },
+  ],
+  features: [
+    { id: '1', title: 'Lập phương án tự động', desc: 'Soạn thảo phương án thi công hotline đầy đủ 14 trang với giao diện trực quan, xem trước WYSIWYG.', iconName: 'FileText', color: 'blue' },
+    { id: '2', title: 'Quản lý an toàn', desc: 'Nhận diện rủi ro, biện pháp an toàn, trình tự thi công theo đúng quy chuẩn ngành điện lực.', iconName: 'Shield', color: 'emerald' },
+    { id: '3', title: 'Cộng đồng chia sẻ', desc: 'Trao đổi kinh nghiệm, chia sẻ phương án, bình luận và tương tác giữa các đội hotline.', iconName: 'Users', color: 'purple' },
+    { id: '4', title: 'Quản trị hệ thống', desc: 'Quản lý người dùng, phân quyền, theo dõi hoạt động và thống kê tài liệu toàn hệ thống.', iconName: 'BarChart3', color: 'amber' },
+    { id: '5', title: 'Xuất PDF & Word', desc: 'Xuất phương án hoàn chỉnh dạng PDF hoặc DOCX, sẵn sàng in ấn và nộp phê duyệt.', iconName: 'Cpu', color: 'rose' },
+    { id: '6', title: 'Lưu trữ & tra cứu', desc: 'Lưu trữ tất cả phương án, xem trước chi tiết, tải về và chỉnh sửa lại bất cứ lúc nào.', iconName: 'Award', color: 'cyan' },
+  ],
+  aboutTitle: 'Đội Sửa chữa Hotline',
+  aboutSubtitle: 'Công ty Điện lực Bắc Ninh',
+  aboutDescription: 'Chúng tôi chuyên thực hiện công tác sửa chữa, bảo dưỡng lưới điện trung áp đang mang điện bằng phương pháp hotline. Với đội ngũ kỹ sư và công nhân lành nghề, chúng tôi cam kết đảm bảo an toàn tuyệt đối trong mọi hoạt động thi công.',
+  aboutChecklist: [
+    'Thi công hotline trên lưới điện 22kV & 35kV',
+    'Đội ngũ được đào tạo chuyên sâu về an toàn điện',
+    'Trang thiết bị hiện đại, đạt tiêu chuẩn quốc tế',
+    'Hệ thống quản lý phương án số hóa hoàn toàn',
+  ],
+  contact: {
+    orgName: 'Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh',
+    hotline: '1900.6769',
+    email: 'contact@patctc.vn',
+    address: 'Thành phố Bắc Ninh, tỉnh Bắc Ninh, Việt Nam',
+    workHours: 'Thứ 2 - Thứ 6: 7:30 - 17:00',
+    personalPhone: '0393.954.568',
+    personalEmail: 'dungdong333@gmail.com',
+  },
+  footerCopyright: '© 2026 PATCTC Generator. Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh.',
+  footerDeveloper: 'Phát triển bởi DungDT293',
+};
+
+interface LandingStore {
+  config: LandingConfig;
+  updateConfig: (updates: Partial<LandingConfig>) => void;
+  updateHeroSlide: (id: string, updates: Partial<HeroSlide>) => void;
+  addHeroSlide: () => void;
+  removeHeroSlide: (id: string) => void;
+  updateFeature: (id: string, updates: Partial<FeatureItem>) => void;
+  updateQuickAction: (id: string, updates: Partial<QuickAction>) => void;
+  updateContact: (updates: Partial<ContactInfo>) => void;
+  updateAboutChecklist: (index: number, value: string) => void;
+  addAboutChecklist: () => void;
+  removeAboutChecklist: (index: number) => void;
+  resetToDefault: () => void;
+}
+
+export const useLandingStore = create<LandingStore>()(
+  persist(
+    (set) => ({
+      config: DEFAULT_CONFIG,
+
+      updateConfig: (updates) => set(state => ({
+        config: { ...state.config, ...updates }
+      })),
+
+      updateHeroSlide: (id, updates) => set(state => ({
+        config: {
+          ...state.config,
+          heroSlides: state.config.heroSlides.map(s => s.id === id ? { ...s, ...updates } : s)
+        }
+      })),
+
+      addHeroSlide: () => set(state => ({
+        config: {
+          ...state.config,
+          heroSlides: [...state.config.heroSlides, {
+            id: Date.now().toString(),
+            badge: 'MỚI',
+            badgeColor: 'bg-blue-600',
+            title: 'Tiêu đề slide mới',
+            subtitle: 'Mô tả slide mới',
+            bgOverlay: 'linear-gradient(135deg, rgba(13,46,107,0.7) 0%, rgba(22,67,150,0.5) 100%)',
+            imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1600&q=80',
+          }]
+        }
+      })),
+
+      removeHeroSlide: (id) => set(state => ({
+        config: {
+          ...state.config,
+          heroSlides: state.config.heroSlides.filter(s => s.id !== id)
+        }
+      })),
+
+      updateFeature: (id, updates) => set(state => ({
+        config: {
+          ...state.config,
+          features: state.config.features.map(f => f.id === id ? { ...f, ...updates } : f)
+        }
+      })),
+
+      updateQuickAction: (id, updates) => set(state => ({
+        config: {
+          ...state.config,
+          quickActions: state.config.quickActions.map(a => a.id === id ? { ...a, ...updates } : a)
+        }
+      })),
+
+      updateContact: (updates) => set(state => ({
+        config: {
+          ...state.config,
+          contact: { ...state.config.contact, ...updates }
+        }
+      })),
+
+      updateAboutChecklist: (index, value) => set(state => {
+        const newList = [...state.config.aboutChecklist];
+        newList[index] = value;
+        return { config: { ...state.config, aboutChecklist: newList } };
+      }),
+
+      addAboutChecklist: () => set(state => ({
+        config: {
+          ...state.config,
+          aboutChecklist: [...state.config.aboutChecklist, 'Mục mới']
+        }
+      })),
+
+      removeAboutChecklist: (index) => set(state => ({
+        config: {
+          ...state.config,
+          aboutChecklist: state.config.aboutChecklist.filter((_, i) => i !== index)
+        }
+      })),
+
+      resetToDefault: () => set({ config: DEFAULT_CONFIG }),
+    }),
+    { name: 'patctc-landing' }
+  )
+);
