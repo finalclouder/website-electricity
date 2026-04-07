@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft } from 'lucide-react';
+import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, MapPin, Users, Wrench, Calendar, Zap } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
-import { useSocialStore } from '../store/useSocialStore';
+import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
+import { PATCTCData } from '../types';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -46,6 +47,20 @@ export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserI
   const [showOldPw, setShowOldPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
   const [pwNotification, setPwNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Document preview state
+  const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
+  const [previewData, setPreviewData] = useState<PATCTCData | null>(null);
+
+  const openPreview = (doc: SavedDocument) => {
+    try {
+      const parsed = JSON.parse(doc.dataSnapshot) as PATCTCData;
+      setPreviewData(parsed);
+      setPreviewDoc(doc);
+    } catch {
+      alert('Không thể đọc dữ liệu tài liệu');
+    }
+  };
 
   if (!user) return null;
   if (!viewedUser) return (
@@ -521,15 +536,25 @@ export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserI
                         </span>
                       </div>
                     </div>
-                    {/* Load/Download button */}
-                    <button
-                      onClick={() => handleLoadDoc(doc.dataSnapshot)}
-                      className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 flex-shrink-0"
-                      title={isViewingOther ? 'Tải về và chỉnh sửa' : 'Mở trong trình soạn thảo'}
-                    >
-                      <Download size={14} />
-                      <span className="hidden sm:inline">{isViewingOther ? 'Tải về' : 'Mở'}</span>
-                    </button>
+                    {/* Preview + Load buttons */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => openPreview(doc)}
+                        className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                        title="Xem trước"
+                      >
+                        <Eye size={14} />
+                        <span className="hidden sm:inline">Xem trước</span>
+                      </button>
+                      <button
+                        onClick={() => handleLoadDoc(doc.dataSnapshot)}
+                        className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                        title={isViewingOther ? 'Tải về và chỉnh sửa' : 'Mở trong trình soạn thảo'}
+                      >
+                        <Download size={14} />
+                        <span className="hidden sm:inline">{isViewingOther ? 'Tải về' : 'Mở'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -617,6 +642,243 @@ export const ProfilePage: React.FC<{ viewingUserId?: string }> = ({ viewingUserI
           </div>
         )}
       </div>
+
+      {/* ========= Document Preview Modal ========= */}
+      {previewDoc && previewData && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-3 sm:p-6" onClick={() => { setPreviewDoc(null); setPreviewData(null); }}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 bg-gradient-to-r from-blue-50 to-cyan-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <FileText size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-zinc-900">{previewDoc.title}</h2>
+                  <p className="text-xs text-zinc-400">{previewDoc.authorName} · {new Date(previewDoc.updatedAt).toLocaleDateString('vi-VN')}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setPreviewDoc(null); setPreviewData(null); }}
+                className="p-2 hover:bg-zinc-100 rounded-xl transition-colors"
+              >
+                <X size={18} className="text-zinc-400" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {/* Thông tin chung */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                <div className="bg-blue-50 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap size={14} className="text-blue-500" />
+                    <span className="text-xs font-bold text-blue-700 uppercase">Thông tin PA</span>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Số văn bản:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.soVb}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Ngày lập:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.ngayLap}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Địa danh:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.diaDanh}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Đơn vị TC:</span>
+                      <span className="font-semibold text-zinc-800 text-right ml-2">{previewData.donViThiCong}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin size={14} className="text-amber-500" />
+                    <span className="text-xs font-bold text-amber-700 uppercase">Đặc điểm CT</span>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Đường dây:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.dz}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Cột:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.cot}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Loại cột:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.loaiCot}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Địa bàn:</span>
+                      <span className="font-semibold text-zinc-800 text-right ml-2 text-xs">{previewData.diaBan}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hạng mục công việc */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wrench size={14} className="text-green-500" />
+                  <span className="text-xs font-bold text-green-700 uppercase">Hạng mục công việc</span>
+                </div>
+                <div className="space-y-1.5">
+                  {previewData.jobItems.map((job, i) => (
+                    <div key={i} className="bg-green-50 rounded-lg px-3 py-2 text-sm text-zinc-700 flex items-start gap-2">
+                      <span className="w-5 h-5 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold text-green-700 flex-shrink-0 mt-0.5">{i + 1}</span>
+                      <span>{job}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Thời gian */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-purple-50 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar size={14} className="text-purple-500" />
+                    <span className="text-xs font-bold text-purple-700 uppercase">Thời gian</span>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Bắt đầu:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.tg_gio}h ngày {previewData.tg_soNgay}/{previewData.tg_thang}/{previewData.tg_nam}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Mạch:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.mach}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users size={14} className="text-rose-500" />
+                    <span className="text-xs font-bold text-rose-700 uppercase">Nhân sự</span>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Người lập:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.nguoiLap}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Đội trưởng:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.doiTruong}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Số nhân công:</span>
+                      <span className="font-semibold text-zinc-800">{previewData.personnel?.length || 0} người</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Nhân sự chi tiết */}
+              {previewData.personnel && previewData.personnel.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users size={14} className="text-indigo-500" />
+                    <span className="text-xs font-bold text-indigo-700 uppercase">Danh sách nhân sự ({previewData.personnel.length})</span>
+                  </div>
+                  <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-zinc-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-zinc-500 font-bold">Họ tên</th>
+                          <th className="px-3 py-2 text-left text-zinc-500 font-bold">Chức danh</th>
+                          <th className="px-3 py-2 text-left text-zinc-500 font-bold hidden sm:table-cell">Công việc</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {previewData.personnel.slice(0, 10).map(p => (
+                          <tr key={p.id} className="hover:bg-zinc-50">
+                            <td className="px-3 py-2 font-medium text-zinc-800">{p.name}</td>
+                            <td className="px-3 py-2 text-zinc-500">{p.role}</td>
+                            <td className="px-3 py-2 text-zinc-500 hidden sm:table-cell">{p.job}</td>
+                          </tr>
+                        ))}
+                        {previewData.personnel.length > 10 && (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-2 text-center text-zinc-400 italic">
+                              +{previewData.personnel.length - 10} người khác...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Dụng cụ */}
+              {previewData.tools && previewData.tools.filter(t => t.selected).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Wrench size={14} className="text-zinc-500" />
+                    <span className="text-xs font-bold text-zinc-600 uppercase">
+                      Dụng cụ ({previewData.tools.filter(t => t.selected).length})
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {previewData.tools.filter(t => t.selected).slice(0, 15).map(t => (
+                      <span key={t.id} className="px-2.5 py-1 bg-zinc-100 text-zinc-600 text-[11px] rounded-lg">
+                        {t.name}
+                      </span>
+                    ))}
+                    {previewData.tools.filter(t => t.selected).length > 15 && (
+                      <span className="px-2.5 py-1 bg-zinc-100 text-zinc-400 text-[11px] rounded-lg italic">
+                        +{previewData.tools.filter(t => t.selected).length - 15} khác
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-5 py-4 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50">
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                  previewDoc.status === 'approved' ? 'bg-green-100 text-green-700'
+                  : previewDoc.status === 'completed' ? 'bg-blue-100 text-blue-700'
+                  : 'bg-zinc-200 text-zinc-500'
+                }`}>
+                  {previewDoc.status === 'approved' ? 'Đã duyệt' : previewDoc.status === 'completed' ? 'Hoàn thành' : 'Bản nháp'}
+                </span>
+                {previewDoc.tags?.filter(Boolean).map((tag, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full">{tag}</span>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setPreviewDoc(null); setPreviewData(null); }}
+                  className="px-4 py-2.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-600 text-sm font-medium rounded-xl transition-all"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={() => {
+                    handleLoadDoc(previewDoc.dataSnapshot);
+                    setPreviewDoc(null);
+                    setPreviewData(null);
+                  }}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                >
+                  <Download size={14} /> {isViewingOther ? 'Tải về & Mở' : 'Mở phương án'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   );
