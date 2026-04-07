@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from './store/useAuthStore';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { MainLayout } from './components/layout/MainLayout';
 import { PATCTCEditorPage } from './pages/PATCTCEditorPage';
@@ -12,10 +13,16 @@ export default function App() {
   const { isAuthenticated } = useAuthStore();
   const [activeTab, setActiveTab] = useState('patctc');
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [showLanding, setShowLanding] = useState(true);
 
-  // Auth gate: show login page if not authenticated
+  // Gate 1: Public landing page (only when not logged in)
+  if (showLanding && !isAuthenticated) {
+    return <LandingPage onEnter={() => setShowLanding(false)} />;
+  }
+
+  // Gate 2: Auth wall
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return <LoginPage onBackToLanding={() => setShowLanding(true)} />;
   }
 
   const handleTabChange = (tab: string) => {

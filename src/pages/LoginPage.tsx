@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { Loader2, Zap, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Zap, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
-export const LoginPage: React.FC = () => {
+export const LoginPage: React.FC<{ onBackToLanding?: () => void }> = ({ onBackToLanding }) => {
   const { login, register, isLoading } = useAuthStore();
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState('');
@@ -43,6 +43,17 @@ export const LoginPage: React.FC = () => {
           backgroundSize: '40px 40px'
         }} />
       </div>
+
+      {/* Back to Landing button */}
+      {onBackToLanding && (
+        <button
+          onClick={onBackToLanding}
+          className="absolute top-6 left-6 z-10 flex items-center gap-2 text-white/70 hover:text-white transition-colors group"
+        >
+          <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Trang chủ</span>
+        </button>
+      )}
 
       <div className="w-full max-w-md relative">
         {/* Logo & Title */}
