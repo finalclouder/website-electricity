@@ -14,15 +14,50 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('patctc');
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [showLanding, setShowLanding] = useState(true);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  const [initialRegister, setInitialRegister] = useState(false);
+
+  // When user logs in successfully, check if there's a pending tab from quick actions
+  const prevAuth = React.useRef(isAuthenticated);
+  React.useEffect(() => {
+    if (!prevAuth.current && isAuthenticated && pendingTab) {
+      setActiveTab(pendingTab);
+      setPendingTab(null);
+    }
+    prevAuth.current = isAuthenticated;
+  }, [isAuthenticated, pendingTab]);
 
   // Gate 1: Public landing page (only when not logged in)
   if (showLanding && !isAuthenticated) {
-    return <LandingPage onEnter={() => setShowLanding(false)} />;
+    return (
+      <LandingPage
+        onEnter={(options) => {
+          if (options?.tab) {
+            setPendingTab(options.tab);
+          }
+          if (options?.register) {
+            setInitialRegister(true);
+          } else {
+            setInitialRegister(false);
+          }
+          setShowLanding(false);
+        }}
+      />
+    );
   }
 
   // Gate 2: Auth wall
   if (!isAuthenticated) {
-    return <LoginPage onBackToLanding={() => setShowLanding(true)} />;
+    return (
+      <LoginPage
+        onBackToLanding={() => {
+          setShowLanding(true);
+          setPendingTab(null);
+          setInitialRegister(false);
+        }}
+        initialRegister={initialRegister}
+      />
+    );
   }
 
   const handleTabChange = (tab: string) => {

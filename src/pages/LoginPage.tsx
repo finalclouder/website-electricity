@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { Loader2, Zap, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
-export const LoginPage: React.FC<{ onBackToLanding?: () => void }> = ({ onBackToLanding }) => {
+export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister?: boolean }> = ({ onBackToLanding, initialRegister = false }) => {
   const { login, register, isLoading } = useAuthStore();
-  const [isRegister, setIsRegister] = useState(false);
+  const [isRegister, setIsRegister] = useState(initialRegister);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
