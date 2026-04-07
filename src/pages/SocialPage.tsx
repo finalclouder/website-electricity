@@ -125,6 +125,7 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
   const allUsers = getAllUsers();
 
   const isLiked = user ? post.likes.includes(user.id) : false;
+  const isShared = user ? (post.sharedBy || []).includes(user.id) : false;
   const catInfo = CATEGORIES.find(c => c.value === post.category) || CATEGORIES[0];
   const CatIcon = catInfo.icon;
 
@@ -364,9 +365,11 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
         </button>
         <button
           onClick={handleShare}
-          className="flex-1 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium text-zinc-500 hover:bg-zinc-50 transition-all"
+          className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all ${
+            isShared ? 'text-blue-500 bg-blue-50' : 'text-zinc-500 hover:bg-zinc-50'
+          }`}
         >
-          <Share2 size={16} /> Chia sẻ
+          <Share2 size={16} /> {isShared ? 'Đã chia sẻ' : 'Chia sẻ'}
         </button>
       </div>
 
