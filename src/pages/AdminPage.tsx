@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2 } from 'lucide-react';
 import { useAuthStore, User } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
 import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, videoToBase64, formatFileSize } from '../utils/mediaUpload';
+
+import { timeAgo } from '../utils/date';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -11,7 +13,7 @@ function getInitials(name: string): string {
 
 // ============ Landing Page Editor Component ============
 const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'error') => void }> = ({ showNotif }) => {
-  const { config, updateConfig, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, addGalleryItem, updateGalleryItem, removeGalleryItem, addVideoItem, updateVideoItem, removeVideoItem, updateCustomerCareBanner, resetToDefault } = useLandingStore();
+  const { config, updateConfig, syncConfigToServer, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, addGalleryItem, updateGalleryItem, removeGalleryItem, addVideoItem, updateVideoItem, removeVideoItem, updateCustomerCareBanner, resetToDefault } = useLandingStore();
   const [activeSection, setActiveSection] = useState('general');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
@@ -158,6 +160,7 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
             <p className="text-xs text-red-500 mb-3">Đặt lại toàn bộ cấu hình trang chủ về giá trị ban đầu.</p>
             {showResetConfirm ? (
               <div className="flex items-center gap-2">
+              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
                 <span className="text-xs text-red-600 font-medium">Xác nhận?</span>
                 <button onClick={() => { resetToDefault(); setShowResetConfirm(false); showNotif('Đã khôi phục mặc định'); }} className="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg">Xác nhận</button>
                 <button onClick={() => setShowResetConfirm(false)} className="px-3 py-1.5 text-xs text-zinc-500">Hủy</button>
@@ -565,6 +568,11 @@ export const AdminPage: React.FC = () => {
   const [adminTab, setAdminTab] = useState<'users' | 'landing'>('users');
   const [searchQuery, setSearchQuery] = useState('');
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    useAuthStore.getState().fetchUsers();
+  }, []);
+
   const [newPassword, setNewPassword] = useState('');
   const [showConfirmDelete, setShowConfirmDelete] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -717,6 +725,7 @@ export const AdminPage: React.FC = () => {
                 <Users size={16} /> Quản lý người dùng ({allUsers.length})
               </h2>
               <div className="flex items-center gap-2">
+              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input
@@ -780,12 +789,28 @@ export const AdminPage: React.FC = () => {
                         <span>{userCommentCount} cmt</span>
                       </div>
                       <div className="col-span-2 text-xs text-zinc-400">
-                        {new Date(u.createdAt).toLocaleDateString('vi-VN')}
+                        {timeAgo(u.createdAt)}
                       </div>
                       <div className="col-span-2 flex items-center justify-end gap-1">
                         {!isCurrentUser && (
                           <>
-                            <button onClick={() => handleToggleRole(u.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title={u.role === 'admin' ? 'Hạ quyền xuống User' : 'Nâng quyền lên Admin'}>
+                            
+          {u.id !== user?.id && u.status === 'pending' && (
+            <>
+              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
+                <X className="w-5 h-5" />
+              </button>
+            </>
+          )}
+          {u.id !== user?.id && u.status === 'rejected' && (
+            <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+          )}
+          <button onClick={() => handleToggleRole(u.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title={u.role === 'admin' ? 'Hạ quyền xuống User' : 'Nâng quyền lên Admin'}>
                               <Shield size={14} />
                             </button>
                             <button onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.id ? null : u.id); setNewPassword(''); }} className="p-1.5 rounded-lg text-zinc-400 hover:text-amber-600 hover:bg-amber-50 transition-all" title="Đặt lại mật khẩu">
@@ -827,12 +852,28 @@ export const AdminPage: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 text-xs text-zinc-400">
                           <span>{userPostCount} bài · {userCommentCount} cmt</span>
-                          <span>{new Date(u.createdAt).toLocaleDateString('vi-VN')}</span>
+                          <span>{timeAgo(u.createdAt)}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           {!isCurrentUser && (
                             <>
-                              <button onClick={() => handleToggleRole(u.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all"><Shield size={14} /></button>
+                              
+          {u.id !== user?.id && u.status === 'pending' && (
+            <>
+              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
+                <X className="w-5 h-5" />
+              </button>
+            </>
+          )}
+          {u.id !== user?.id && u.status === 'rejected' && (
+            <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+          )}
+          <button onClick={() => handleToggleRole(u.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all"><Shield size={14} /></button>
                               <button onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.id ? null : u.id); setNewPassword(''); }} className="p-1.5 rounded-lg text-zinc-400 hover:text-amber-600 hover:bg-amber-50 transition-all"><Key size={14} /></button>
                               <button onClick={() => setShowConfirmDelete(showConfirmDelete === u.id ? null : u.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 size={14} /></button>
                             </>
@@ -846,6 +887,7 @@ export const AdminPage: React.FC = () => {
                       <div className="px-3 sm:px-4 pb-3">
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                           <div className="flex items-center gap-2">
+              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
                             <Key size={16} className="text-amber-500 flex-shrink-0" />
                             <span className="text-xs text-amber-700 font-medium whitespace-nowrap">Mật khẩu mới cho {u.name}:</span>
                           </div>
@@ -913,18 +955,6 @@ export const AdminPage: React.FC = () => {
                     </div>
                   );
                 }
-
-                const timeAgo = (dateStr: string) => {
-                  const diff = Date.now() - new Date(dateStr).getTime();
-                  const mins = Math.floor(diff / 60000);
-                  if (mins < 1) return 'Vừa xong';
-                  if (mins < 60) return `${mins} phút trước`;
-                  const hrs = Math.floor(mins / 60);
-                  if (hrs < 24) return `${hrs} giờ trước`;
-                  const days = Math.floor(hrs / 24);
-                  if (days < 7) return `${days} ngày trước`;
-                  return new Date(dateStr).toLocaleDateString('vi-VN');
-                };
 
                 return activities.slice(0, 30).map((act, i) => {
                   const Icon = act.icon;
