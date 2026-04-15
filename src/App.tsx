@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import { useAuthStore } from './store/useAuthStore';
+import { useSocialStore } from './store/useSocialStore';
+import { useLandingStore } from './store/useLandingStore';
+import { useNavigationStore } from './store/useNavigationStore';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { MainLayout } from './components/layout/MainLayout';
@@ -10,73 +13,115 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 
 export default function App() {
-  const { isAuthenticated } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('patctc');
-  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
-  const [previousTab, setPreviousTab] = useState('social');
-  const [showLanding, setShowLanding] = useState(true);
-  const [pendingTab, setPendingTab] = useState<string | null>(null);
-  const [initialRegister, setInitialRegister] = useState(false);
+  const { isAuthenticated, logout, user } = useAuthStore();
+  const {
+    fetchPosts,
+    fetchDocuments,
+    fetchFriendRequests,
+    fetchNotifications,
+    fetchUnreadNotificationCount,
+  } = useSocialStore();
+  const { fetchConfigFromServer } = useLandingStore();
+  const {
+    activeTab,
+    viewingUserId,
+    previousTab,
+    showLanding,
+    pendingTab,
+    initialRegister,
+    navigateToTab,
+    viewUserProfile,
+    backFromUserProfile,
+    enterFromLanding,
+    returnToLanding,
+    applyPendingTabAfterLogin,
+    resetNavigation,
+  } = useNavigationStore();
 
-  // When user logs in successfully, check if there's a pending tab from quick actions
   const prevAuth = React.useRef(isAuthenticated);
   React.useEffect(() => {
     if (!prevAuth.current && isAuthenticated && pendingTab) {
-      setActiveTab(pendingTab);
-      setPendingTab(null);
+      applyPendingTabAfterLogin();
     }
+
+    if (prevAuth.current && !isAuthenticated) {
+      resetNavigation();
+    }
+
     prevAuth.current = isAuthenticated;
-  }, [isAuthenticated, pendingTab]);
+  }, [isAuthenticated, pendingTab, applyPendingTabAfterLogin, resetNavigation]);
+
+  // Fetch data from server when authenticated
+  useEffect(() => {
+    fetchConfigFromServer();
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      import('./utils/api').then(({ api }) => {
+        api.get('/auth/me')
+          .then((user: any) => {
+             useAuthStore.setState({ user });
+             useAuthStore.getState().fetchUsers();
+          })
+          .catch(() => {
+             logout();
+          });
+      });
+      fetchPosts();
+      fetchDocuments();
+      fetchFriendRequests();
+      fetchNotifications();
+      fetchUnreadNotificationCount();
+    }
+  }, [
+    isAuthenticated,
+    logout,
+    fetchPosts,
+    fetchDocuments,
+    fetchFriendRequests,
+    fetchNotifications,
+    fetchUnreadNotificationCount,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    if (activeTab === 'admin' && user?.role !== 'admin') {
+      navigateToTab('patctc');
+      return;
+    }
+
+    if (activeTab === 'user-profile' && !viewingUserId) {
+      navigateToTab(previousTab);
+    }
+  }, [isAuthenticated, activeTab, user?.role, viewingUserId, previousTab, navigateToTab]);
 
   // Gate 1: Public landing page (only when not logged in)
   if (showLanding && !isAuthenticated) {
-    return (
-      <LandingPage
-        onEnter={(options) => {
-          if (options?.tab) {
-            setPendingTab(options.tab);
-          }
-          if (options?.register) {
-            setInitialRegister(true);
-          } else {
-            setInitialRegister(false);
-          }
-          setShowLanding(false);
-        }}
-      />
-    );
+    return <LandingPage onEnter={enterFromLanding} />;
   }
 
   // Gate 2: Auth wall
   if (!isAuthenticated) {
     return (
       <LoginPage
-        onBackToLanding={() => {
-          setShowLanding(true);
-          setPendingTab(null);
-          setInitialRegister(false);
-        }}
+        onBackToLanding={returnToLanding}
         initialRegister={initialRegister}
       />
     );
   }
 
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
-    if (tab !== 'profile' && tab !== 'user-profile') {
-      setViewingUserId(null);
-    }
+    navigateToTab(tab);
   };
 
   const handleViewUserProfile = (userId: string) => {
-    setPreviousTab(activeTab);
-    setViewingUserId(userId);
-    setActiveTab('user-profile');
+    viewUserProfile(userId);
   };
 
   const handleBackFromProfile = () => {
-    setViewingUserId(null);
-    setActiveTab(previousTab);
+    backFromUserProfile();
   };
 
   // Main app with tab navigation

@@ -1,5 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api } from '../utils/api';
+
+function upsertCachedUser(cachedUsers: User[], nextUser: User): User[] {
+  const existingIndex = cachedUsers.findIndex(user => user.id === nextUser.id);
+  if (existingIndex === -1) {
+    return [...cachedUsers, nextUser];
+  }
+
+  const nextCachedUsers = [...cachedUsers];
+  nextCachedUsers[existingIndex] = nextUser;
+  return nextCachedUsers;
+}
 
 export interface User {
   id: string;
@@ -8,161 +20,200 @@ export interface User {
   avatar: string; // base64 data URL or empty
   bio: string;
   role: 'admin' | 'user';
+  status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
 }
 
 interface AuthState {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  cachedUsers: User[]; // Cached user list for sync access
 
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  register: (name: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
-  updateProfile: (updates: Partial<User>) => void;
-  changePassword: (oldPassword: string, newPassword: string) => boolean;
+  updateProfile: (updates: Partial<User>) => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
+
+  // User list (fetched from server, cached locally)
+  fetchUsers: () => Promise<void>;
+  fetchUserById: (userId: string) => Promise<User | null>;
+  getAllUsers: () => User[]; // Sync accessor for cached users
 
   // Admin functions
-  getAllUsers: () => (User & { password: string })[];
-  deleteUser: (userId: string) => void;
-  toggleUserRole: (userId: string) => void;
-  resetUserPassword: (userId: string, newPassword: string) => void;
+  deleteUser: (userId: string) => Promise<void>;
+  toggleUserRole: (userId: string) => Promise<void>;
+  updateUserStatus: (userId: string, status: 'pending' | 'approved' | 'rejected') => Promise<void>;
+  resetUserPassword: (userId: string, newPassword: string) => Promise<void>;
 }
-
-// Mock users database (will be replaced with real backend later)
-const MOCK_USERS: (User & { password: string })[] = [
-  {
-    id: '1',
-    name: 'Nguyễn Tuấn Anh',
-    email: 'admin@patctc.vn',
-    avatar: '',
-    bio: 'Đội trưởng Đội sửa chữa Hotline - Công ty Điện lực Bắc Ninh',
-    role: 'admin',
-    password: 'admin123',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: '2',
-    name: 'Chu Đình Dũng',
-    email: 'user@patctc.vn',
-    avatar: '',
-    bio: 'Công nhân Hotline - Đội sửa chữa Hotline',
-    role: 'user',
-    password: 'user123',
-    createdAt: new Date().toISOString()
-  }
-];
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
+      token: null,
       isAuthenticated: false,
       isLoading: false,
+      cachedUsers: [],
 
       login: async (email, password) => {
         set({ isLoading: true });
-        // Simulate API call
-        await new Promise(r => setTimeout(r, 800));
-
-        const found = MOCK_USERS.find(u => u.email === email && u.password === password);
-        if (found) {
-          const { password: _, ...user } = found;
-          set({ user, isAuthenticated: true, isLoading: false });
-          return true;
+        try {
+          const data = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
+          if (!data.token) {
+            set({ isLoading: false });
+            return { ok: false, error: 'Đăng nhập thất bại' };
+          }
+          set({ user: data.user, token: data.token, isAuthenticated: true, isLoading: false });
+          get().fetchUsers();
+          return { ok: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          return { ok: false, error: error.message };
         }
-
-        set({ isLoading: false });
-        return false;
       },
 
       register: async (name, email, password) => {
         set({ isLoading: true });
-        await new Promise(r => setTimeout(r, 800));
-
-        // Check existing
-        if (MOCK_USERS.find(u => u.email === email)) {
+        try {
+          const data = await api.post<{ token: string; user: User; message?: string }>('/auth/register', { name, email, password });
+          if (!data.token || data.user?.status !== 'approved') {
+            set({ isLoading: false });
+            return { ok: true, error: data.message || 'Đăng ký thành công! Vui lòng chờ Admin phê duyệt.' };
+          }
+          set({ user: data.user, token: data.token, isAuthenticated: true, isLoading: false });
+          get().fetchUsers();
+          return { ok: true };
+        } catch (error: any) {
           set({ isLoading: false });
-          return false;
+          return { ok: false, error: error.message };
         }
-
-        const newUser: User = {
-          id: Date.now().toString(),
-          name,
-          email,
-          avatar: '',
-          bio: '',
-          role: 'user',
-          createdAt: new Date().toISOString()
-        };
-
-        MOCK_USERS.push({ ...newUser, password });
-        set({ user: newUser, isAuthenticated: true, isLoading: false });
-        return true;
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false });
+        set({ user: null, token: null, isAuthenticated: false, cachedUsers: [] });
       },
 
-      updateProfile: (updates) => {
-        const { user } = get();
-        if (!user) return;
-        const updatedUser = { ...user, ...updates };
-        set({ user: updatedUser });
-        // Also sync to MOCK_USERS
-        const idx = MOCK_USERS.findIndex(u => u.id === user.id);
-        if (idx >= 0) {
-          MOCK_USERS[idx] = { ...MOCK_USERS[idx], ...updates };
+      updateProfile: async (updates) => {
+        try {
+          const updatedUser = await api.put<User>('/auth/profile', updates);
+          set(state => ({
+            user: updatedUser,
+            cachedUsers: upsertCachedUser(state.cachedUsers, updatedUser),
+          }));
+        } catch (error: any) {
+          console.error('Update profile error:', error.message);
         }
       },
 
-      changePassword: (oldPassword, newPassword) => {
+      changePassword: async (oldPassword, newPassword) => {
+        try {
+          await api.put('/auth/password', { oldPassword, newPassword });
+          return { ok: true };
+        } catch (error: any) {
+          return { ok: false, error: error.message };
+        }
+      },
+
+      fetchUsers: async () => {
         const { user } = get();
-        if (!user) return false;
-        const found = MOCK_USERS.find(u => u.id === user.id);
-        if (!found || found.password !== oldPassword) return false;
-        found.password = newPassword;
-        return true;
+        if (!user) return;
+        if (user.role !== 'admin') {
+          set(state => ({ cachedUsers: upsertCachedUser(state.cachedUsers, user) }));
+          return;
+        }
+        try {
+          const users = await api.get<User[]>('/auth/users');
+          set(state => {
+            const mergedUsers = [...users];
+            if (user && !mergedUsers.some(cachedUser => cachedUser.id === user.id)) {
+              mergedUsers.push(user);
+            }
+            return { cachedUsers: mergedUsers };
+          });
+        } catch {
+          set(state => ({ cachedUsers: upsertCachedUser(state.cachedUsers, user) }));
+        }
+      },
+
+      fetchUserById: async (userId) => {
+        const { cachedUsers, user } = get();
+        const cachedUser = cachedUsers.find(cached => cached.id === userId);
+        if (cachedUser) return cachedUser;
+
+        if (user?.id === userId) {
+          set(state => ({ cachedUsers: upsertCachedUser(state.cachedUsers, user) }));
+          return user;
+        }
+
+        try {
+          const fetchedUser = await api.get<User>(`/auth/users/${userId}`);
+          set(state => ({ cachedUsers: upsertCachedUser(state.cachedUsers, fetchedUser) }));
+          return fetchedUser;
+        } catch (error: any) {
+          if (error.message === 'Không tìm thấy người dùng') {
+            return null;
+          }
+          throw error;
+        }
       },
 
       getAllUsers: () => {
-        return [...MOCK_USERS];
+        return get().cachedUsers;
       },
 
-      deleteUser: (userId) => {
-        const { user } = get();
-        if (!user || user.role !== 'admin') return;
-        if (userId === user.id) return; // Can't delete yourself
-        const idx = MOCK_USERS.findIndex(u => u.id === userId);
-        if (idx >= 0) MOCK_USERS.splice(idx, 1);
-      },
-
-      toggleUserRole: (userId) => {
-        const { user } = get();
-        if (!user || user.role !== 'admin') return;
-        if (userId === user.id) return; // Can't change own role
-        const found = MOCK_USERS.find(u => u.id === userId);
-        if (found) {
-          found.role = found.role === 'admin' ? 'user' : 'admin';
+      deleteUser: async (userId) => {
+        try {
+          await api.delete(`/auth/users/${userId}`);
+          set(state => ({ cachedUsers: state.cachedUsers.filter(u => u.id !== userId) }));
+        } catch (error: any) {
+          console.error('Delete user error:', error.message);
         }
       },
 
-      resetUserPassword: (userId, newPassword) => {
-        const { user } = get();
-        if (!user || user.role !== 'admin') return;
-        const found = MOCK_USERS.find(u => u.id === userId);
-        if (found) {
-          found.password = newPassword;
+      toggleUserRole: async (userId) => {
+        try {
+          await api.put(`/auth/users/${userId}/role`);
+          set(state => ({
+            cachedUsers: state.cachedUsers.map(u =>
+              u.id === userId ? { ...u, role: u.role === 'admin' ? 'user' as const : 'admin' as const } : u
+            ),
+          }));
+        } catch (error: any) {
+          console.error('Toggle role error:', error.message);
         }
-      }
+      },
+
+      updateUserStatus: async (userId, status) => {
+        try {
+          await api.put(`/auth/users/${userId}/status`, { status });
+          set(state => ({
+            cachedUsers: state.cachedUsers.map(u =>
+              u.id === userId ? { ...u, status } : u
+            ),
+          }));
+        } catch (error: any) {
+          console.error('Update status error:', error.message);
+        }
+      },
+
+      resetUserPassword: async (userId, newPassword) => {
+        try {
+          await api.put(`/auth/users/${userId}/password`, { newPassword });
+        } catch (error: any) {
+          console.error('Reset password error:', error.message);
+        }
+      },
     }),
     {
       name: 'patctc-auth',
       partialize: (state) => ({
         user: state.user,
-        isAuthenticated: state.isAuthenticated
-      })
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
     }
   )
 );

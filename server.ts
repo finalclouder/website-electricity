@@ -26,6 +26,8 @@ import {
 } from "docx";
 import PDFDocument from "pdfkit-table";
 import fs from "fs";
+import { formatDateSlash, getDateParts } from "./src/utils/date.js";
+import { cleanJobItem, ensureLocation, formatJobItem, HANG_MUC_SUFFIX, SHORT_HOTLINE_SUFFIX, toTitleCase } from "./src/utils/patctcFormat.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,42 +69,80 @@ const getItalicFontPath = () => {
   return "Times-Italic"; // Fallback
 };
 
+import { seedDefaultUsersIfNeeded } from './database.js';
+import authRoutes from './src/api/authRoutes.js';
+import socialRoutes from './src/api/socialRoutes.js';
+import socialGraphRoutes from './src/api/socialGraphRoutes.js';
+import documentRoutes from './src/api/documentRoutes.js';
+import landingRoutes from './src/api/landingRoutes.js';
+import { authMiddleware } from './src/api/authMiddleware.js';
+import { uploadsRoot } from './src/api/landingRoutes.js';
+
+function createInMemoryRateLimiter(windowMs: number, maxRequests: number) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+
+  return (req: any, res: any, next: any) => {
+    const now = Date.now();
+    const userId = req.user?.userId || 'anonymous';
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const key = `${userId}:${ip}`;
+
+    const current = hits.get(key);
+    if (!current || now > current.resetAt) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    current.count += 1;
+    if (current.count > maxRequests) {
+      return res.status(429).json({ error: 'Quá nhiều yêu cầu xuất file. Vui lòng thử lại sau.' });
+    }
+
+    return next();
+  };
+}
+
 async function startServer() {
+  await seedDefaultUsersIfNeeded();
+
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+  const exportRateLimit = createInMemoryRateLimiter(60 * 1000, 8);
 
-  app.use(express.json({ limit: '50mb' }));
+  // Body size limit - 10MB for base64 images
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // API routes
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
+  // API routes - modular
+  app.use('/api/auth', authRoutes);
+  app.use('/api/posts', socialRoutes);
+  app.use('/api/social', socialGraphRoutes);
+  app.use('/api/documents', documentRoutes);
+  app.use('/api/landing', landingRoutes);
+  app.use('/uploads', express.static(uploadsRoot));
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
-  app.post("/api/export/pdf", async (req, res) => {
+  app.post("/api/export/pdf", authMiddleware, exportRateLimit, async (req, res) => {
     try {
       const data = req.body;
       const fixedDonVi = "Đội sửa chữa Hotline";
-      const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
       const fontRegular = getFontPath();
       const fontBold = getBoldFontPath();
       const fontItalic = getItalicFontPath();
-
-      const formatJobItem = (text: string, cot: string, dz: string) => {
-        if (!text) return "";
-        let trimmed = text.trim();
-        if (trimmed.endsWith('.') || trimmed.endsWith(',')) {
-          trimmed = trimmed.slice(0, -1);
-        }
-        const locationPart = (cot || dz) ? `, tại cột ${cot || ""} ĐZ ${dz || ""}` : "";
-        return trimmed + locationPart + HANG_MUC_SUFFIX;
-      };
-
-      const toTitleCase = (str: string) => {
-        if (!str) return "";
-        return str.toLowerCase().split(' ').map(word => {
-          return word.charAt(0).toUpperCase() + word.slice(1);
-        }).join(' ');
-      };
+      const ngayLapParts = getDateParts(data.ngayLap) ?? { day: "", month: "", year: "" };
+      const canCu9Date = formatDateSlash(data.canCu9_ngayVanBan, "25/02/2025");
 
       const doc = new PDFDocument({
         size: "A4",
@@ -115,7 +155,7 @@ async function startServer() {
       doc.on("end", () => {
         const pdfData = Buffer.concat(buffers);
         res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename=PATCTC_${data.soVb}.pdf`);
+        res.setHeader("Content-Disposition", `attachment; filename=PATCTC_${(data.soVb || "export").toString().replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
         res.send(pdfData);
       });
 
@@ -141,14 +181,14 @@ async function startServer() {
 
       doc.moveDown(3);
       doc.font(fontBold).text("Hạng mục công việc: ", { continued: true });
-      doc.font(fontRegular).text(formatJobItem(data.jobItems[0], data.cot, data.dz));
+      doc.font(fontRegular).text(formatJobItem((data.jobItems && data.jobItems.length > 0 ? data.jobItems[0] : null), data.cot, data.dz));
       
       doc.moveDown(1);
       doc.font(fontBold).text("Đơn vị thi công: ", { continued: true });
       doc.font(fontRegular).text(fixedDonVi);
 
       doc.moveDown(2);
-      doc.font(fontItalic).text(`${data.diaDanh}, ngày ${data.ngayLap.split('-')[2]} tháng ${data.ngayLap.split('-')[1]} năm ${data.ngayLap.split('-')[0]}`, { align: "center" });
+      doc.font(fontItalic).text(`${data.diaDanh}, ngày ${ngayLapParts.day} tháng ${ngayLapParts.month} năm ${ngayLapParts.year}`, { align: "center" });
 
       doc.moveDown(1);
       doc.font(fontBold).text("Người lập phương án: ", { continued: true });
@@ -191,7 +231,7 @@ async function startServer() {
         "6. Quyết định số 2219/QĐ-EVNNPC ngày 03/8/2018 của Tổng công ty Điện lực miền Bắc quy định hướng dẫn sử dụng và bảo quản dụng cụ thi công hotline tại cấp điện áp 22kV;",
         "7. Quyết định số: 681/QĐ-EVNNPC ngày 26 /03/2021 của Tổng công ty Điện lực miền Bắc ban hành quy định hướng dẫn vận hành và bảo quản xe gàu hotline-Hiệu TEREX.",
         "8. Căn cứ các quy định đã ban hành về hướng dẫn các thao tác Hotline cho từng công việc bằng phương pháp sử dụng găng tay và xe gàu cách điện.",
-        `9. Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${data.canCu9_ngayVanBan ? `${data.canCu9_ngayVanBan.split('-')[2]}/${data.canCu9_ngayVanBan.split('-')[1]}/${data.canCu9_ngayVanBan.split('-')[0]}` : "25/02/2025"}.`,
+        `9. Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${canCu9Date}.`,
         `10. “Biên bản khảo sát hiện trường” ngày ${day} tháng ${month} năm ${year} giữa đội sửa chữa Hotline và ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"}.`
       ];
 
@@ -351,32 +391,17 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("PDF Export error:", error);
-      res.status(500).json({ error: error.message });
+      console.error("Export Error:", error);
+      res.status(500).json({ error: "Lỗi tạo file. Vui lòng kiểm tra lại dữ liệu." });
     }
   });
 
-  app.post("/api/export/docx", async (req, res) => {
+  app.post("/api/export/docx", authMiddleware, exportRateLimit, async (req, res) => {
     try {
       const data = req.body;
       const fixedDonVi = "Đội sửa chữa Hotline";
-      const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
-
-      const formatJobItem = (text: string, cot: string, dz: string) => {
-        if (!text) return "";
-        let trimmed = text.trim();
-        if (trimmed.endsWith('.') || trimmed.endsWith(',')) {
-          trimmed = trimmed.slice(0, -1);
-        }
-        const locationPart = (cot || dz) ? `, tại cột ${cot || ""} ĐZ ${dz || ""}` : "";
-        return trimmed + locationPart + HANG_MUC_SUFFIX;
-      };
-
-      const toTitleCase = (str: string) => {
-        if (!str) return "";
-        return str.toLowerCase().split(' ').map(word => {
-          return word.charAt(0).toUpperCase() + word.slice(1);
-        }).join(' ');
-      };
+      const ngayLapParts = getDateParts(data.ngayLap) ?? { day: "", month: "", year: "" };
+      const canCu9Date = formatDateSlash(data.canCu9_ngayVanBan, "25/02/2025");
 
       // Helper for standard text style
       const standardText = (text: string, options: any = {}) => {
@@ -405,26 +430,6 @@ async function startServer() {
           })
         );
       };
-
-      const cleanJobItem = (text: string) => {
-        if (!text) return "";
-        let cleaned = text.replace(/, bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện\.?$/, "");
-        cleaned = cleaned.replace(/ bằng phương pháp Hotline\.?$/, "");
-        return cleaned.trim().replace(/\.+$/, "");
-      };
-
-      const ensureLocation = (item: string, cot: string, dz: string) => {
-        const cleaned = cleanJobItem(item);
-        const locationStr = `tại cột ${cot} ĐZ ${dz}`;
-        if (cleaned.includes("tại cột")) {
-          const idx = cleaned.indexOf("tại cột");
-          const prefix = cleaned.substring(0, idx).trim().replace(/,$/, "");
-          return `${prefix}, ${locationStr}`;
-        }
-        return `${cleaned}, ${locationStr}`;
-      };
-
-      const SHORT_HOTLINE_SUFFIX = " bằng phương pháp Hotline.";
 
       const cellBorders = {
         top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
@@ -605,7 +610,7 @@ async function startServer() {
                 alignment: AlignmentType.CENTER,
                 spacing: { line: 312 },
                 children: [
-                  new TextRun({ text: `${data.diaDanh}, ngày ${data.ngayLap.split('-')[2]} tháng ${data.ngayLap.split('-')[1]} năm ${data.ngayLap.split('-')[0]}`, font: "Times New Roman", size: 26, italics: true }),
+                  new TextRun({ text: `${data.diaDanh}, ngày ${ngayLapParts.day} tháng ${ngayLapParts.month} năm ${ngayLapParts.year}`, font: "Times New Roman", size: 26, italics: true }),
                 ],
               }),
               new Paragraph({
@@ -700,7 +705,7 @@ async function startServer() {
               new Paragraph({
                 spacing: { line: 312 },
                 indent: { left: 720, hanging: 720 },
-                children: [new TextRun({ text: `9. Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${data.canCu9_ngayVanBan ? `${data.canCu9_ngayVanBan.split('-')[2]}/${data.canCu9_ngayVanBan.split('-')[1]}/${data.canCu9_ngayVanBan.split('-')[0]}` : "25/02/2025"}.`, font: "Times New Roman", size: 26 })],
+                children: [new TextRun({ text: `9. Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${canCu9Date}.`, font: "Times New Roman", size: 26 })],
               }),
               new Paragraph({
                 spacing: { line: 312 },
@@ -1654,12 +1659,13 @@ async function startServer() {
 
       const buffer = await Packer.toBuffer(doc);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      res.setHeader('Content-Disposition', `attachment; filename=PATCTC_${data.soVb}.docx`);
+      res.setHeader('Content-Disposition', `attachment; filename=PATCTC_${(data.soVb || "export").toString().replace(/[^a-zA-Z0-9_-]/g, "_")}.docx`);
       res.send(buffer);
 
     } catch (error: any) {
       console.error("Export error:", error);
-      res.status(500).json({ error: error.message });
+      console.error("Export Error:", error);
+      res.status(500).json({ error: "Lỗi tạo file. Vui lòng kiểm tra lại dữ liệu." });
     }
   });
 

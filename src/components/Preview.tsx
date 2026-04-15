@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { PATCTCData } from '../types';
 import { WORK_TYPES } from '../constants';
-import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { clsx } from 'clsx';
+import { formatDateSlash, getDateParts } from '../utils/date';
+import { cleanJobItem, ensureLocation, formatJobItem, HANG_MUC_SUFFIX, SHORT_HOTLINE_SUFFIX, toTitleCase } from '../utils/patctcFormat';
+import { PreviewPage } from './preview/PreviewPage';
+import { PreviewToolbar } from './preview/PreviewToolbar';
 
 interface PreviewProps {
   data: PATCTCData;
@@ -14,11 +17,13 @@ interface PreviewProps {
 export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, setZoom }) => {
   const [debugMode, setDebugMode] = useState(false);
   let currentPage = 0;
+  const ngayLapParts = getDateParts(data.ngayLap) ?? { day: '', month: '', year: '' };
   
   const getCanCuItems = () => {
     const day = data.canCu10_ngay?.padStart(2, '0') || "27";
     const month = data.canCu10_thang?.padStart(2, '0') || "02";
     const year = data.canCu10_nam || "2027";
+    const canCu9Date = formatDateSlash(data.canCu9_ngayVanBan, "25/02/2025");
     
     return [
       "“Quy chuẩn kỹ thuật Quốc gia về kỹ thuật điện - Tập 7: Thi công các công trình điện” (để xây dựng biện pháp kỹ thuật thi công).",
@@ -29,103 +34,31 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
       "Quyết định số 2219/QĐ-EVNNPC ngày 03/8/2018 của Tổng công ty Điện lực miền Bắc quy định hướng dẫn sử dụng và bảo quản dụng cụ thi công hotline tại cấp điện áp 22kV;",
       "Quyết định số: 681/QĐ-EVNNPC ngày 26 /03/2021 của Tổng công ty Điện lực miền Bắc ban hành quy định hướng dẫn vận hành và bảo quản xe gàu hotline-Hiệu TEREX.",
       "Căn cứ các quy định đã ban hành về hướng dẫn các thao tác Hotline cho từng công việc bằng phương pháp sử dụng găng tay và xe gàu cách điện.",
-      `Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${data.canCu9_ngayVanBan ? `${data.canCu9_ngayVanBan.split('-')[2]}/${data.canCu9_ngayVanBan.split('-')[1]}/${data.canCu9_ngayVanBan.split('-')[0]}` : "25/02/2025"}.`,
+      `Căn cứ vào đề nghị thi công Hotline của ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"} số ${data.canCu9_soVanBan || "637/KVBG-KHKT"} ngày ${canCu9Date}.`,
       `“Biên bản khảo sát hiện trường” ngày ${day} tháng ${month} năm ${year} giữa đội sửa chữa Hotline và ${data.doiQuanLyKhuVuc || "Đội QLĐLKV Bắc Giang"}.`
     ];
   };
 
   const canCuItems = getCanCuItems();
 
-  const toTitleCase = (str: string) => {
-    if (!str) return "";
-    return str.toLowerCase().split(' ').map(word => {
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    }).join(' ');
-  };
-
   const renderPage = (content: React.ReactNode, id: string) => {
     currentPage++;
     const pageNum = currentPage;
     return (
-      <div 
+      <PreviewPage
         key={id}
-        id={`preview-${id}`}
-        className={clsx(
-          "bg-white shadow-2xl mx-auto mb-8 min-h-[29.7cm] w-[21cm] text-[13pt] font-times leading-[1.3] text-black relative origin-top transition-transform duration-200",
-          "a4-page",
-          activeSection === id ? "ring-4 ring-blue-400" : ""
-        )}
-        style={{ 
-          transform: `scale(${zoom})`,
-          paddingTop: '2cm',
-          paddingBottom: '2cm',
-          paddingLeft: '2.5cm',
-          paddingRight: '2.5cm'
-        }}
+        id={id}
+        isActive={activeSection === id}
+        zoom={zoom}
+        debugMode={debugMode}
+        pageNum={pageNum}
       >
-        {/* Debug Guidelines */}
-        {debugMode && (
-          <div className="absolute inset-0 pointer-events-none z-50">
-            {/* Margins */}
-            <div className="absolute top-0 bottom-0 left-[2.5cm] w-px bg-red-200" />
-            <div className="absolute top-0 bottom-0 right-[2.5cm] w-px bg-red-200" />
-            <div className="absolute top-[2cm] left-0 right-0 h-px bg-red-200" />
-            <div className="absolute bottom-[2cm] left-0 right-0 h-px bg-red-200" />
-            
-            {/* Line markers */}
-            {Array.from({ length: 41 }).map((_, i) => (
-              <div 
-                key={i} 
-                className={clsx(
-                  "absolute left-0 right-0 border-b border-red-100 flex items-center justify-end pr-2 text-[8pt] text-red-300 font-times",
-                )}
-                style={{ top: `calc(2cm + ${i * 1.3}em)`, height: '1.3em' }}
-              >
-                {i + 1}
-              </div>
-            ))}
-          </div>
-        )}
         {content}
-        <div className="absolute bottom-8 left-0 right-0 text-center text-[13pt] font-times text-black print:hidden">
-          {pageNum}
-        </div>
-      </div>
+      </PreviewPage>
     );
   };
 
-  const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
-  const SHORT_HOTLINE_SUFFIX = " bằng phương pháp Hotline.";
   const fixedDonVi = "Đội sửa chữa Hotline";
-
-  const cleanJobItem = (item: string) => {
-    if (!item) return "";
-    // Remove the specific suffixes if they exist
-    let cleaned = item.replace(/, bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện\.?$/, "");
-    cleaned = cleaned.replace(/ bằng phương pháp Hotline\.?$/, "");
-    // Remove any trailing dots
-    return cleaned.trim().replace(/\.+$/, "");
-  };
-
-  const ensureLocation = (item: string, cot: string, dz: string) => {
-    const cleaned = cleanJobItem(item);
-    const locationStr = `tại cột ${cot} ĐZ ${dz}`;
-    
-    if (cleaned.includes("tại cột")) {
-      const index = cleaned.indexOf("tại cột");
-      const prefix = cleaned.substring(0, index).trim();
-      // Remove trailing comma from prefix if it exists
-      const cleanPrefix = prefix.replace(/,$/, "");
-      return `${cleanPrefix}, ${locationStr}`;
-    } else {
-      return `${cleaned}, ${locationStr}`;
-    }
-  };
-
-  const formatJobItem = (text: string, cot: string, dz: string) => {
-    if (!text) return "";
-    return ensureLocation(text, cot, dz) + HANG_MUC_SUFFIX;
-  };
 
   const BlankLine = ({ count = 1 }: { count?: number }) => (
     <>
@@ -137,65 +70,12 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
   return (
     <div className="flex-1 bg-zinc-100 flex flex-col h-full overflow-hidden">
-      {/* Zoom Controls */}
-      <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between shadow-sm z-10">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center bg-zinc-100 rounded-lg p-1">
-            <button 
-              onClick={() => setZoom(prev => Math.max(0.5, prev - 0.05))}
-              className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-zinc-600"
-              title="Zoom Out"
-            >
-              <ZoomOut size={16} />
-            </button>
-            <span className="text-xs font-bold text-zinc-500 w-12 text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button 
-              onClick={() => setZoom(prev => Math.min(1.5, prev + 0.05))}
-              className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-zinc-600"
-              title="Zoom In"
-            >
-              <ZoomIn size={16} />
-            </button>
-          </div>
-          <div className="h-4 w-px bg-zinc-200" />
-          <button 
-            onClick={() => setZoom(0.85)}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-          >
-            Reset (85%)
-          </button>
-          <button 
-            onClick={() => setZoom(0.65)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-zinc-800"
-          >
-            <Maximize size={14} /> Fit to page
-          </button>
-          <div className="h-4 w-px bg-zinc-200" />
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <div className={clsx(
-              "w-8 h-4 rounded-full relative transition-colors",
-              debugMode ? "bg-blue-500" : "bg-zinc-300"
-            )}>
-              <div className={clsx(
-                "absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform",
-                debugMode ? "translate-x-4" : "translate-x-0"
-              )} />
-            </div>
-            <input 
-              type="checkbox" 
-              className="hidden" 
-              checked={debugMode} 
-              onChange={() => setDebugMode(!debugMode)} 
-            />
-            <span className="text-xs font-bold text-zinc-500 group-hover:text-zinc-700">DEBUG MODE</span>
-          </label>
-        </div>
-        <div className="text-[10pt] text-zinc-400 font-medium italic">
-          Chế độ xem trước (WYSIWYG)
-        </div>
-      </div>
+      <PreviewToolbar
+        zoom={zoom}
+        setZoom={setZoom}
+        debugMode={debugMode}
+        setDebugMode={setDebugMode}
+      />
 
       <div className="flex-1 overflow-y-auto p-12 scroll-smooth bg-zinc-200/50">
         {/* Trang bìa */}
@@ -245,7 +125,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
                 <span className="font-bold">Đơn vị thi công:</span> {fixedDonVi}
               </div>
               <div className="text-center italic leading-tight">
-                {data.diaDanh}, ngày {data.ngayLap.split('-')[2]} tháng {data.ngayLap.split('-')[1]} năm {data.ngayLap.split('-')[0]}
+                {data.diaDanh}, ngày {ngayLapParts.day} tháng {ngayLapParts.month} năm {ngayLapParts.year}
               </div>
               <div className="flex justify-between items-baseline font-bold leading-tight">
                 <span>Người lập phương án: <span className="font-normal">{toTitleCase(data.nguoiLap)}</span></span>

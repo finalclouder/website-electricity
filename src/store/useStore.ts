@@ -2,49 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { PATCTCData, WorkType, RiskItem, Personnel, ConstructionSequence, BocCachDienBlock, DieuKhienGauBlock, ThaoBocCachDienBlock } from '../types';
 import { WORK_TYPES, PERSONNEL_MASTER, TOOLS_MASTER } from '../constants';
+import { cleanJobItem, ensureBulletFormat, ensureLocation, formatJobItem } from '../utils/patctcFormat';
 
-// === Helper functions ===
-export function ensureBulletFormat(text: string): string {
-  if (!text) return '';
-  return text.split('\n').map(line => {
-    let trimmed = line.trim();
-    if (!trimmed) return '';
-    if (!trimmed.startsWith('-')) trimmed = '- ' + trimmed;
-    else if (!trimmed.startsWith('- ')) trimmed = '- ' + trimmed.slice(1).trim();
-    if (!trimmed.endsWith('.')) trimmed += '.';
-    const afterDash = trimmed.slice(2);
-    trimmed = '- ' + afterDash.charAt(0).toUpperCase() + afterDash.slice(1);
-    return trimmed;
-  }).filter(Boolean).join('\n');
-}
-
-export function cleanJobItem(item: string): string {
-  const suffix = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
-  let cleaned = item.trim();
-  if (cleaned.endsWith(suffix)) cleaned = cleaned.slice(0, -suffix.length);
-  return cleaned;
-}
-
-export function ensureLocation(item: string, cot: string, dz: string): string {
-  if (!cot && !dz) return item;
-  const locationStr = `tại cột ${cot} ĐZ ${dz}`;
-  if (item.includes(locationStr)) return item;
-  const locationPattern = /,?\s*tại cột\s+\S+\s+ĐZ\s+\S+/g;
-  let cleaned = item.replace(locationPattern, '').trim();
-  if (cleaned.endsWith(',')) cleaned = cleaned.slice(0, -1).trim();
-  if (cleaned.endsWith('.')) cleaned = cleaned.slice(0, -1).trim();
-  return `${cleaned}, ${locationStr}`;
-}
-
-const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
-
-export function formatJobItem(text: string, cot: string, dz: string): string {
-  if (!text) return '';
-  const withLocation = ensureLocation(text, cot, dz);
-  let result = withLocation.trim();
-  if (result.endsWith('.')) result = result.slice(0, -1);
-  return result + HANG_MUC_SUFFIX;
-}
+export { cleanJobItem, ensureBulletFormat, ensureLocation, formatJobItem };
 
 // === Initial Data ===
 const today = new Date();

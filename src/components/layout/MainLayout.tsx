@@ -1,6 +1,8 @@
 import React from 'react';
-import { Zap, FileText, Users, FolderOpen, LogOut, Settings, User } from 'lucide-react';
+import { Bell, FileText, LogOut, Settings, User, Users, FolderOpen } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useSocialStore } from '../../store/useSocialStore';
+import { timeAgo } from '../../utils/date';
 
 interface MainLayoutProps {
   activeTab: string;
@@ -14,7 +16,22 @@ function getInitials(name: string): string {
 
 export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, children }) => {
   const { user, logout } = useAuthStore();
+  const {
+    notifications,
+    unreadNotificationCount,
+    fetchNotifications,
+    fetchUnreadNotificationCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useSocialStore();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
+  const [showNotificationMenu, setShowNotificationMenu] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!showNotificationMenu) return;
+    fetchNotifications();
+    fetchUnreadNotificationCount();
+  }, [showNotificationMenu, fetchNotifications, fetchUnreadNotificationCount]);
 
   const TABS = [
     { id: 'patctc', label: 'Lập phương án', icon: FileText },
@@ -22,22 +39,19 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
     { id: 'documents', label: 'Tài liệu đã lưu', icon: FolderOpen },
   ];
 
+  const recentNotifications = notifications.slice(0, 8);
+
   return (
     <div className="h-screen flex flex-col bg-zinc-100 overflow-hidden">
-      {/* Top Nav Bar */}
       <nav className="bg-white border-b border-zinc-200 px-2 sm:px-4 py-0 flex items-center justify-between flex-shrink-0 h-12 sm:h-14 shadow-sm z-50">
-        {/* Left: Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm">
-            <Zap size={18} className="text-white" />
-          </div>
+          <img src="/logo-square.png" alt="Logo" className="w-8 h-8 object-contain rounded-md border border-zinc-200 shadow-sm bg-white p-0.5" />
           <div className="hidden sm:block">
             <h1 className="text-sm font-bold text-zinc-900 leading-tight">PATCTC</h1>
             <p className="text-[10px] text-zinc-400 leading-tight">Generator</p>
           </div>
         </div>
 
-        {/* Center: Tabs */}
         <div className="flex items-center bg-zinc-100 rounded-lg sm:rounded-xl p-0.5 sm:p-1 gap-0.5">
           {TABS.map(tab => {
             const Icon = tab.icon;
@@ -59,64 +73,138 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
           })}
         </div>
 
-        {/* Right: User menu */}
-        <div className="relative">
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2.5 hover:bg-zinc-50 rounded-xl px-2.5 py-1.5 transition-all"
-          >
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold overflow-hidden">
-              {user?.avatar ? (
-                <img src={user.avatar} alt={user?.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                  {user ? getInitials(user.name) : '?'}
-                </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowNotificationMenu(prev => !prev);
+                setShowUserMenu(false);
+              }}
+              aria-label="Mở thông báo"
+              className="relative flex items-center justify-center w-10 h-10 hover:bg-zinc-50 rounded-xl transition-all"
+            >
+              <Bell size={18} className={showNotificationMenu ? 'text-blue-600' : 'text-zinc-500'} />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm">
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </span>
               )}
-            </div>
-            <div className="hidden sm:block text-left">
-              <div className="text-xs font-semibold text-zinc-700 leading-tight">{user?.name}</div>
-              <div className="text-[10px] text-zinc-400 leading-tight capitalize">{user?.role}</div>
-            </div>
-          </button>
+            </button>
 
-          {showUserMenu && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-              <div className="absolute right-0 top-12 bg-white border border-zinc-200 rounded-xl shadow-xl py-1 z-50 min-w-48">
-                <div className="px-3 py-2 border-b border-zinc-100">
-                  <div className="text-sm font-semibold text-zinc-800">{user?.name}</div>
-                  <div className="text-xs text-zinc-400">{user?.email}</div>
+            {showNotificationMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowNotificationMenu(false)} />
+                <div className="absolute right-0 top-12 bg-white border border-zinc-200 rounded-2xl shadow-xl z-50 w-[320px] sm:w-[360px] overflow-hidden">
+                  <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-800">Thông báo</div>
+                      <div className="text-xs text-zinc-400">{unreadNotificationCount} chưa đọc</div>
+                    </div>
+                    <button
+                      onClick={() => markAllNotificationsRead()}
+                      disabled={notifications.length === 0 || unreadNotificationCount === 0}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-zinc-300"
+                    >
+                      Đánh dấu tất cả
+                    </button>
+                  </div>
+
+                  <div className="max-h-[420px] overflow-y-auto">
+                    {recentNotifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-zinc-400">
+                        Chưa có thông báo nào
+                      </div>
+                    ) : (
+                      recentNotifications.map(notification => (
+                        <div
+                          key={notification.id}
+                          className={`px-4 py-3 border-b border-zinc-50 last:border-b-0 ${notification.isRead ? 'bg-white' : 'bg-blue-50/50'}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notification.isRead ? 'bg-zinc-200' : 'bg-blue-500'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-zinc-700 leading-5">{notification.message}</p>
+                              <p className="text-[11px] text-zinc-400 mt-1">{timeAgo(notification.createdAt)}</p>
+                            </div>
+                            {!notification.isRead && (
+                              <button
+                                onClick={() => markNotificationRead(notification.id)}
+                                className="text-[11px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap"
+                              >
+                                Đã đọc
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => { onTabChange('profile'); setShowUserMenu(false); }}
-                  className="w-full px-3 py-2.5 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2.5 transition-colors"
-                >
-                  <User size={15} className="text-zinc-400" /> Hồ sơ cá nhân
-                </button>
-                {user?.role === 'admin' && (
+              </>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowUserMenu(prev => !prev);
+                setShowNotificationMenu(false);
+              }}
+              aria-label="Mở menu người dùng"
+              className="flex items-center gap-2.5 hover:bg-zinc-50 rounded-xl px-2.5 py-1.5 transition-all"
+            >
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={user?.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                    {user ? getInitials(user.name) : '?'}
+                  </div>
+                )}
+              </div>
+              <div className="hidden sm:block text-left">
+                <div className="text-xs font-semibold text-zinc-700 leading-tight">{user?.name}</div>
+                <div className="text-[10px] text-zinc-400 leading-tight capitalize">{user?.role}</div>
+              </div>
+            </button>
+
+            {showUserMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                <div className="absolute right-0 top-12 bg-white border border-zinc-200 rounded-xl shadow-xl py-1 z-50 min-w-48">
+                  <div className="px-3 py-2 border-b border-zinc-100">
+                    <div className="text-sm font-semibold text-zinc-800">{user?.name}</div>
+                    <div className="text-xs text-zinc-400">{user?.email}</div>
+                  </div>
                   <button
-                    onClick={() => { onTabChange('admin'); setShowUserMenu(false); }}
+                    onClick={() => { onTabChange('profile'); setShowUserMenu(false); }}
                     className="w-full px-3 py-2.5 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2.5 transition-colors"
                   >
-                    <Settings size={15} className="text-zinc-400" /> Quản trị hệ thống
+                    <User size={15} className="text-zinc-400" /> Hồ sơ cá nhân
                   </button>
-                )}
-                <div className="border-t border-zinc-100 mt-1 pt-1">
-                  <button
-                    onClick={logout}
-                    className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition-colors"
-                  >
-                    <LogOut size={15} /> Đăng xuất
-                  </button>
+                  {user?.role === 'admin' && (
+                    <button
+                      onClick={() => { onTabChange('admin'); setShowUserMenu(false); }}
+                      className="w-full px-3 py-2.5 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2.5 transition-colors"
+                    >
+                      <Settings size={15} className="text-zinc-400" /> Quản trị hệ thống
+                    </button>
+                  )}
+                  <div className="border-t border-zinc-100 mt-1 pt-1">
+                    <button
+                      onClick={logout}
+                      className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition-colors"
+                    >
+                      <LogOut size={15} /> Đăng xuất
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </nav>
 
-      {/* Content */}
       <div className="flex-1 overflow-hidden">
         {children}
       </div>

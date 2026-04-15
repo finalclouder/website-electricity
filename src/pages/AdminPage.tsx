@@ -3,9 +3,9 @@ import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, 
 import { useAuthStore, User } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
-import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, videoToBase64, formatFileSize } from '../utils/mediaUpload';
+import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, formatFileSize, uploadLandingVideo, MAX_LANDING_VIDEO_SIZE_MB } from '../utils/mediaUpload';
 
-import { timeAgo } from '../utils/date';
+import { parseAppDate, timeAgo } from '../utils/date';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -13,10 +13,43 @@ function getInitials(name: string): string {
 
 // ============ Landing Page Editor Component ============
 const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'error') => void }> = ({ showNotif }) => {
-  const { config, updateConfig, syncConfigToServer, updateHeroSlide, addHeroSlide, removeHeroSlide, updateFeature, updateQuickAction, updateContact, updateAboutChecklist, addAboutChecklist, removeAboutChecklist, addGalleryItem, updateGalleryItem, removeGalleryItem, addVideoItem, updateVideoItem, removeVideoItem, updateCustomerCareBanner, resetToDefault } = useLandingStore();
+  const {
+    config,
+    hasUnsavedChanges,
+    isSaving,
+    saveError,
+    updateConfig,
+    syncConfigToServer,
+    updateHeroSlide,
+    addHeroSlide,
+    removeHeroSlide,
+    updateFeature,
+    updateQuickAction,
+    updateContact,
+    updateAboutChecklist,
+    addAboutChecklist,
+    removeAboutChecklist,
+    addGalleryItem,
+    updateGalleryItem,
+    removeGalleryItem,
+    addVideoItem,
+    updateVideoItem,
+    removeVideoItem,
+    updateCustomerCareBanner,
+    resetToDefault,
+  } = useLandingStore();
   const [activeSection, setActiveSection] = useState('general');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
+
+  const handleSave = async () => {
+    try {
+      await syncConfigToServer();
+      showNotif('Đã lưu và đồng bộ thay đổi lên máy chủ thành công!');
+    } catch (err: any) {
+      showNotif(err?.message || 'Không thể lưu cấu hình trang chủ', 'error');
+    }
+  };
 
   // Generic file upload handler
   const handleImageUpload = async (
@@ -46,22 +79,22 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
   };
 
   const handleVideoUpload = async (
-    onResult: (dataUrl: string) => void,
+    onResult: (videoUrl: string) => void,
     uploadKey: string
   ) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'video/mp4,video/webm,video/ogg';
+    input.accept = 'video/mp4';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       setUploading(uploadKey);
       try {
-        const dataUrl = await videoToBase64(file);
-        onResult(dataUrl);
-        showNotif(`Đã tải lên video ${file.name} (${formatFileSize(file.size)})`);
+        const uploaded = await uploadLandingVideo(file);
+        onResult(uploaded.url);
+        showNotif(`Đã tải video ${uploaded.originalName} (${formatFileSize(uploaded.size)}) lên máy chủ`);
       } catch (err: any) {
-        showNotif(err.message || 'Lỗi tải video', 'error');
+        showNotif(err.message || 'Không thể tải video lên máy chủ', 'error');
       } finally {
         setUploading(null);
       }
@@ -70,14 +103,14 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
   };
 
   // Upload button component
-  const UploadBtn: React.FC<{ label: string; uploadKey: string; accept?: string; onUpload: () => void }> = ({ label, uploadKey, onUpload }) => (
+  const UploadBtn: React.FC<{ label: string; uploadKey: string; loadingLabel?: string; accept?: string; onUpload: () => void }> = ({ label, uploadKey, loadingLabel = 'Đang xử lý...', onUpload }) => (
     <button
       onClick={onUpload}
       disabled={uploading === uploadKey}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-[11px] font-bold rounded-lg border border-blue-200 transition-all disabled:opacity-50"
     >
       {uploading === uploadKey ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-      {uploading === uploadKey ? 'Đang xử lý...' : label}
+      {uploading === uploadKey ? loadingLabel : label}
     </button>
   );
 
@@ -100,7 +133,24 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
   const tabOptions = ['patctc', 'social', 'documents'];
 
   return (
-    <div>
+    <div className="space-y-4">
+      <div className="sticky top-0 z-10 bg-zinc-100/95 backdrop-blur rounded-2xl border border-zinc-200 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-bold text-zinc-800">Quản lý nội dung trang chủ</div>
+          <div className="text-xs text-zinc-500">
+            {hasUnsavedChanges ? 'Có thay đổi chưa lưu' : 'Mọi thay đổi đã được lưu lên máy chủ'}
+          </div>
+          {saveError && <div className="text-xs text-red-600 mt-1">{saveError}</div>}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={isSaving || !hasUnsavedChanges}
+          className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2"
+        >
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          <span>{isSaving ? 'Đang lưu...' : 'Đồng bộ & Lưu Web'}</span>
+        </button>
+      </div>
       {/* Section tabs */}
       <div className="flex flex-wrap gap-1.5 mb-6 bg-zinc-50 rounded-xl p-1.5 border border-zinc-100">
         {sections.map(s => {
@@ -160,8 +210,7 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
             <p className="text-xs text-red-500 mb-3">Đặt lại toàn bộ cấu hình trang chủ về giá trị ban đầu.</p>
             {showResetConfirm ? (
               <div className="flex items-center gap-2">
-              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
-                <span className="text-xs text-red-600 font-medium">Xác nhận?</span>
+                              <span className="text-xs text-red-600 font-medium">Xác nhận?</span>
                 <button onClick={() => { resetToDefault(); setShowResetConfirm(false); showNotif('Đã khôi phục mặc định'); }} className="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg">Xác nhận</button>
                 <button onClick={() => setShowResetConfirm(false)} className="px-3 py-1.5 text-xs text-zinc-500">Hủy</button>
               </div>
@@ -242,10 +291,14 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                     <div>
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
                       <div className="flex gap-2">
-                        <input value={slide.videoUrl || ''} onChange={e => updateHeroSlide(slide.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
-                        <UploadBtn label="Tải video lên" uploadKey={`hero-vid-${slide.id}`} onUpload={() => handleVideoUpload((url) => updateHeroSlide(slide.id, { videoUrl: url }), `hero-vid-${slide.id}`)} />
+                        <input value={slide.videoUrl || ''} onChange={e => updateHeroSlide(slide.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4 hoặc /uploads/landing/videos/..." />
+                        <UploadBtn label="Tải video lên" loadingLabel="Đang tải lên máy chủ..." uploadKey={`hero-vid-${slide.id}`} onUpload={() => handleVideoUpload((url) => updateHeroSlide(slide.id, { videoUrl: url }), `hero-vid-${slide.id}`)} />
                       </div>
-                      <p className="text-[10px] text-zinc-400 mt-1">Video tải lên tối đa 5MB. Video lớn hơn hãy dùng URL bên ngoài.</p>
+                      <div className="mt-1 space-y-0.5 text-[10px] text-zinc-500">
+                        <p>Hỗ trợ tải video trực tiếp lên máy chủ. Định dạng hỗ trợ: MP4. Dung lượng tối đa: {MAX_LANDING_VIDEO_SIZE_MB}MB.</p>
+                        <p>Khuyến nghị codec H.264/AAC, tỷ lệ 16:9, độ phân giải 1280x720 hoặc 1920x1080.</p>
+                        <p>Video hero nên ngắn, nhẹ, ưu tiên 10-30 giây để tải trang nhanh hơn. Sau khi tải lên xong nhớ bấm “Đồng bộ & Lưu Web”.</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -465,10 +518,14 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
                     <div className="col-span-2">
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">URL Video (mp4)</label>
                       <div className="flex gap-2">
-                        <input value={video.videoUrl} onChange={e => updateVideoItem(video.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4" />
-                        <UploadBtn label="Tải video" uploadKey={`video-file-${video.id}`} onUpload={() => handleVideoUpload((url) => updateVideoItem(video.id, { videoUrl: url }), `video-file-${video.id}`)} />
+                        <input value={video.videoUrl} onChange={e => updateVideoItem(video.id, { videoUrl: e.target.value })} className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" placeholder="https://...video.mp4 hoặc /uploads/landing/videos/..." />
+                        <UploadBtn label="Tải video" loadingLabel="Đang tải lên máy chủ..." uploadKey={`video-file-${video.id}`} onUpload={() => handleVideoUpload((url) => updateVideoItem(video.id, { videoUrl: url }), `video-file-${video.id}`)} />
                       </div>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Tải lên tối đa 5MB. Video lớn hãy dùng URL ngoài.</p>
+                      <div className="mt-0.5 space-y-0.5 text-[10px] text-zinc-500">
+                        <p>Hỗ trợ tải video trực tiếp lên máy chủ. Chỉ hỗ trợ MP4, tối đa {MAX_LANDING_VIDEO_SIZE_MB}MB.</p>
+                        <p>Khuyến nghị H.264/AAC, khung hình 16:9 và độ phân giải 1280x720 hoặc 1920x1080 để phát ổn định.</p>
+                        <p>Sau khi tải video lên thành công, nhớ bấm “Đồng bộ & Lưu Web” để lưu cấu hình.</p>
+                      </div>
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-zinc-600 mb-1 block">Thời lượng</label>
@@ -725,8 +782,7 @@ export const AdminPage: React.FC = () => {
                 <Users size={16} /> Quản lý người dùng ({allUsers.length})
               </h2>
               <div className="flex items-center gap-2">
-              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
-                <div className="relative">
+                              <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input
                     value={searchQuery}
@@ -887,8 +943,7 @@ export const AdminPage: React.FC = () => {
                       <div className="px-3 sm:px-4 pb-3">
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                           <div className="flex items-center gap-2">
-              <button onClick={() => { syncConfigToServer(); alert("Đã lưu và đồng bộ thay đổi lên máy chủ thành công!"); }} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">Đồng bộ & Lưu Web</span></button>
-                            <Key size={16} className="text-amber-500 flex-shrink-0" />
+                                          <Key size={16} className="text-amber-500 flex-shrink-0" />
                             <span className="text-xs text-amber-700 font-medium whitespace-nowrap">Mật khẩu mới cho {u.name}:</span>
                           </div>
                           <div className="flex-1 flex items-center gap-2">
@@ -945,7 +1000,7 @@ export const AdminPage: React.FC = () => {
                 savedDocuments.forEach(d => {
                   activities.push({ text: `${d.authorName} đã lưu tài liệu "${d.title.slice(0, 40)}"`, time: d.createdAt, icon: FileText, color: 'purple' });
                 });
-                activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+                activities.sort((a, b) => (parseAppDate(b.time)?.getTime() ?? 0) - (parseAppDate(a.time)?.getTime() ?? 0));
 
                 if (activities.length === 0) {
                   return (

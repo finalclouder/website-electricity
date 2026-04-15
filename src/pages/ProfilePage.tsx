@@ -1,37 +1,75 @@
-import React, { useState, useRef } from 'react';
-import { Shield, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, MapPin, Users, Wrench, Calendar, Zap, Copy } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
 import { PATCTCData } from '../types';
+import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
+import { parseAppDate, timeAgo } from '../utils/date';
+import { api, getAuthHeaders } from '../utils/api';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Vừa xong';
-  if (mins < 60) return `${mins} phút trước`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} giờ trước`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days} ngày trước`;
-  return new Date(dateStr).toLocaleDateString('vi-VN');
-}
-
 export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void; onTabChange?: (tab: string) => void }> = ({ viewingUserId, onBack, onTabChange }) => {
-  const { user, updateProfile, changePassword, getAllUsers } = useAuthStore();
-  const { posts, savedDocuments, saveDocument } = useSocialStore();
+  const { user, updateProfile, changePassword, getAllUsers, fetchUserById } = useAuthStore();
+  const {
+    posts,
+    savedDocuments,
+    saveDocument,
+    relationshipsByUserId,
+    followersByUserId,
+    followingByUserId,
+    incomingFriendRequests,
+    outgoingFriendRequests,
+    friends,
+    documentDownloadsByDocumentId,
+    fetchRelationship,
+    fetchFollowers,
+    fetchFollowing,
+    fetchFriends,
+    fetchDocumentDownloads,
+    followUser,
+    unfollowUser,
+    sendFriendRequest,
+    acceptFriendRequest,
+    rejectFriendRequest,
+    cancelFriendRequest,
+    trackDocumentDownload,
+  } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profileFetchMissed, setProfileFetchMissed] = useState(false);
+  const [viewedUserDocuments, setViewedUserDocuments] = useState<SavedDocument[]>([]);
+  const [isDocumentsLoading, setIsDocumentsLoading] = useState(false);
+  const [isRelationshipLoading, setIsRelationshipLoading] = useState(false);
 
-  // Determine if we're viewing another user's profile
   const allUsers = getAllUsers();
-  const isViewingOther = viewingUserId && viewingUserId !== user?.id;
-  const viewedUser = isViewingOther
-    ? allUsers.find(u => u.id === viewingUserId)
-    : user;
+
+  const isOwner = Boolean(user && (!viewingUserId || viewingUserId === user.id));
+  const isViewingOther = Boolean(viewingUserId && user && viewingUserId !== user.id);
+
+  const viewedUser = useMemo(() => {
+    if (isOwner) return user;
+    if (!viewingUserId) return null;
+    return allUsers.find(candidate => candidate.id === viewingUserId) ?? null;
+  }, [allUsers, isOwner, user, viewingUserId]);
+
+  const profileUser = viewedUser ?? (isOwner ? user : null);
+  const relationship = viewingUserId ? relationshipsByUserId[viewingUserId] : undefined;
+  const followerCount = profileUser ? (followersByUserId[profileUser.id]?.length ?? relationship?.followerCount ?? 0) : 0;
+  const followingCount = profileUser ? (followingByUserId[profileUser.id]?.length ?? relationship?.followingCount ?? 0) : 0;
+  const isFriend = Boolean(profileUser && friends.some(friend => friend.userId === profileUser.id));
+  const incomingRequest = profileUser ? incomingFriendRequests.find(request => request.senderId === profileUser.id) : undefined;
+  const outgoingRequest = profileUser ? outgoingFriendRequests.find(request => request.receiverId === profileUser.id) : undefined;
+
+  const userDocs = useMemo(() => {
+    if (!profileUser) return [];
+    return isViewingOther
+      ? viewedUserDocuments
+      : savedDocuments.filter(doc => doc.authorId === profileUser.id);
+  }, [isViewingOther, profileUser, viewedUserDocuments, savedDocuments]);
 
   const [editName, setEditName] = useState(user?.name || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
@@ -51,6 +89,129 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   // Document preview state
   const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
   const [previewData, setPreviewData] = useState<PATCTCData | null>(null);
+  const [downloadHistoryDocId, setDownloadHistoryDocId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    setEditName(user.name || '');
+    setEditEmail(user.email || '');
+    setEditBio(user.bio || '');
+  }, [user?.id, user?.name, user?.email, user?.bio]);
+
+  useEffect(() => {
+    if (!viewingUserId || viewingUserId === user?.id) {
+      setProfileFetchMissed(false);
+      setIsProfileLoading(false);
+      return;
+    }
+
+    const hasCachedUser = allUsers.some(candidate => candidate.id === viewingUserId);
+    if (hasCachedUser) {
+      setProfileFetchMissed(false);
+      setIsProfileLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsProfileLoading(true);
+    setProfileFetchMissed(false);
+
+    fetchUserById(viewingUserId)
+      .then(foundUser => {
+        if (!cancelled) {
+          setProfileFetchMissed(!foundUser);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProfileFetchMissed(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsProfileLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingUserId, user?.id, allUsers, fetchUserById]);
+
+  useEffect(() => {
+    if (!viewingUserId || viewingUserId === user?.id) {
+      setViewedUserDocuments([]);
+      setIsDocumentsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsDocumentsLoading(true);
+
+    api.get<SavedDocument[]>(`/documents/user/${viewingUserId}`)
+      .then(docs => {
+        if (!cancelled) {
+          setViewedUserDocuments(docs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setViewedUserDocuments([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsDocumentsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingUserId, user?.id]);
+
+  useEffect(() => {
+    if (!viewingUserId || viewingUserId === user?.id) {
+      setIsRelationshipLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsRelationshipLoading(true);
+
+    Promise.all([
+      fetchRelationship(viewingUserId),
+      fetchFollowers(viewingUserId),
+      fetchFollowing(viewingUserId),
+      fetchFriends(),
+    ])
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setIsRelationshipLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingUserId, user?.id, fetchRelationship, fetchFollowers, fetchFollowing, fetchFriends]);
+
+  useEffect(() => {
+    if (!isOwner) {
+      setDownloadHistoryDocId(null);
+      return;
+    }
+
+    if (activeProfileTab !== 'activity') {
+      setDownloadHistoryDocId(null);
+    }
+  }, [activeProfileTab, isOwner]);
+
+  useEffect(() => {
+    if (!downloadHistoryDocId || !isOwner) return;
+    fetchDocumentDownloads(downloadHistoryDocId);
+  }, [downloadHistoryDocId, isOwner, fetchDocumentDownloads]);
 
   const openPreview = (doc: SavedDocument) => {
     try {
@@ -62,24 +223,68 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     }
   };
 
-  if (!user) return null;
-  if (!viewedUser) return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center">
-        <AlertTriangle size={48} className="mx-auto mb-4 text-zinc-300" />
-        <p className="text-sm text-zinc-400">Không tìm thấy người dùng</p>
-      </div>
-    </div>
-  );
+  const handleFollowToggle = async () => {
+    if (!viewingUserId || !profileUser) return;
+    if (relationship?.isFollowing) {
+      await unfollowUser(viewingUserId);
+    } else {
+      await followUser(viewingUserId);
+    }
+    await Promise.all([
+      fetchRelationship(viewingUserId),
+      fetchFollowers(viewingUserId),
+      user ? fetchFollowing(user.id) : Promise.resolve(),
+    ]);
+  };
 
-  const profileUser = viewedUser;
+  const handleFriendAction = async () => {
+    if (!viewingUserId || !profileUser) return;
+
+    if (incomingRequest) {
+      await acceptFriendRequest(incomingRequest.id);
+    } else if (outgoingRequest) {
+      await cancelFriendRequest(outgoingRequest.id);
+    } else if (!isFriend) {
+      await sendFriendRequest(viewingUserId);
+    }
+
+    await Promise.all([
+      fetchRelationship(viewingUserId),
+      fetchFriends(),
+    ]);
+  };
+
+  const handleRejectIncomingRequest = async () => {
+    if (!incomingRequest || !viewingUserId) return;
+    await rejectFriendRequest(incomingRequest.id);
+    await Promise.all([
+      fetchRelationship(viewingUserId),
+      fetchFriends(),
+    ]);
+  };
+
+  if (!user) return null;
+  if (isProfileLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-zinc-400">
+        Đang tải hồ sơ...
+      </div>
+    );
+  }
+  if (!viewedUser && profileFetchMissed) {
+    return (
+      <div className="flex items-center justify-center py-16 text-zinc-400">
+        Không tìm thấy người dùng
+      </div>
+    );
+  }
+  if (!profileUser) return null;
 
   // User stats - use profileUser's ID
   const userPosts = posts.filter(p => p.authorId === profileUser.id);
   const userComments = posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).length, 0);
   const totalLikesReceived = userPosts.reduce((acc, p) => acc + p.likes.length, 0)
     + posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).reduce((a, c) => a + c.likes.length, 0), 0);
-  const userDocs = savedDocuments.filter(d => d.authorId === profileUser.id);
 
   const handleSaveProfile = () => {
     if (!editName.trim()) return;
@@ -116,9 +321,12 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   };
 
   // Load a document into the editor and navigate
-  const handleLoadDoc = (dataSnapshot: string) => {
+  const handleLoadDoc = async (doc: SavedDocument) => {
     try {
-      const parsed = JSON.parse(dataSnapshot);
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
+      const parsed = JSON.parse(doc.dataSnapshot);
       useStore.getState().setData(parsed);
       onTabChange?.('patctc');
     } catch {
@@ -148,7 +356,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!oldPassword.trim()) {
       setPwNotification({ text: 'Vui lòng nhập mật khẩu hiện tại', type: 'error' });
       setTimeout(() => setPwNotification(null), 3000);
@@ -164,17 +372,77 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       setTimeout(() => setPwNotification(null), 3000);
       return;
     }
-    const success = changePassword(oldPassword, newPassword);
-    if (success) {
+    const result = await changePassword(oldPassword, newPassword);
+    if (result.ok) {
       setPwNotification({ text: 'Đã đổi mật khẩu thành công!', type: 'success' });
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setShowPasswordForm(false);
     } else {
-      setPwNotification({ text: 'Mật khẩu hiện tại không đúng', type: 'error' });
+      setPwNotification({ text: result.error || 'Mật khẩu hiện tại không đúng', type: 'error' });
     }
     setTimeout(() => setPwNotification(null), 3000);
+  };
+
+  const exportPdf = async (doc: SavedDocument) => {
+    try {
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
+
+      const parsed = JSON.parse(doc.dataSnapshot);
+      const res = await fetch('/api/export/pdf', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(parsed),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(errorData.error || 'Server error');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PATCTC_${parsed.soVb || 'export'}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải file PDF');
+    }
+  };
+
+  const exportWord = async (doc: SavedDocument) => {
+    try {
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
+
+      const parsed = JSON.parse(doc.dataSnapshot);
+      const res = await fetch('/api/export/docx', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(parsed),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(errorData.error || 'Server error');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PATCTC_${parsed.soVb || 'export'}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải file Word');
+    }
   };
 
   const STATS = [
@@ -184,13 +452,23 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     { label: 'Tài liệu', value: userDocs.length, icon: FileText, color: 'purple' },
   ];
 
+  const relationshipStats = [
+    { label: 'Người theo dõi', value: followerCount },
+    { label: 'Đang theo dõi', value: followingCount },
+    { label: 'Bạn bè', value: isFriend ? 1 : 0 },
+  ];
+
+  const currentDownloadHistory = downloadHistoryDocId
+    ? (documentDownloadsByDocumentId[downloadHistoryDocId] ?? [])
+    : [];
+
   const hasAvatar = profileUser.avatar && profileUser.avatar.length > 0;
 
   return (
     <div className="h-full overflow-y-auto">
     <div className="max-w-3xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
       {/* Hidden file input for avatar */}
-      {!isViewingOther && (
+      {isOwner && (
         <input
           ref={avatarInputRef}
           type="file"
@@ -232,7 +510,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 )}
               </div>
               {/* Camera overlay - only for own profile */}
-              {!isViewingOther && (
+              {isOwner && (
                 <button
                   onClick={() => avatarInputRef.current?.click()}
                   className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-all cursor-pointer border-4 border-transparent"
@@ -241,7 +519,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 </button>
               )}
               {/* Remove avatar button */}
-              {!isViewingOther && hasAvatar && (
+              {isOwner && hasAvatar && (
                 <button
                   onClick={handleRemoveAvatar}
                   className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg"
@@ -265,7 +543,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               {profileUser.bio && (
                 <p className="text-sm text-zinc-600 mt-1">{profileUser.bio}</p>
               )}
-              {!profileUser.bio && !isEditing && !isViewingOther && (
+              {!profileUser.bio && !isEditing && isOwner && (
                 <button
                   onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditBio(''); setIsEditing(true); }}
                   className="text-sm text-blue-500 hover:text-blue-600 mt-1 italic"
@@ -274,7 +552,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 </button>
               )}
             </div>
-            {!isViewingOther && (
+            {isOwner ? (
               <button
                 onClick={() => {
                   if (isEditing) handleCancelEdit();
@@ -288,11 +566,39 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               >
                 {isEditing ? <><X size={14} /> Hủy</> : <><Edit3 size={14} /> Chỉnh sửa</>}
               </button>
+            ) : (
+              <div className="flex flex-col gap-2 items-stretch sm:items-end">
+                <button
+                  onClick={handleFollowToggle}
+                  disabled={isRelationshipLoading}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${relationship?.isFollowing ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'} disabled:opacity-60`}
+                >
+                  {relationship?.isFollowing ? 'Bỏ theo dõi' : 'Theo dõi'}
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleFriendAction}
+                    disabled={isRelationshipLoading || isFriend}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-60 ${isFriend ? 'bg-green-100 text-green-700' : incomingRequest ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20' : outgoingRequest ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-500/20'}`}
+                  >
+                    {isFriend ? 'Đã là bạn' : incomingRequest ? 'Chấp nhận lời mời' : outgoingRequest ? 'Hủy lời mời' : 'Kết bạn'}
+                  </button>
+                  {incomingRequest && (
+                    <button
+                      onClick={handleRejectIncomingRequest}
+                      disabled={isRelationshipLoading}
+                      className="px-4 py-2 rounded-xl text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-all disabled:opacity-60"
+                    >
+                      Từ chối
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
           {/* Edit Form - only own profile */}
-          {!isViewingOther && isEditing && (
+          {isOwner && isEditing && (
             <div className="bg-zinc-50 rounded-xl p-4 mb-4 border border-zinc-200">
               <h3 className="text-sm font-bold text-zinc-700 mb-3">Chỉnh sửa hồ sơ</h3>
               <div className="space-y-3">
@@ -356,11 +662,22 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               );
             })}
           </div>
+
+          {!isOwner && (
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              {relationshipStats.map(stat => (
+                <div key={stat.label} className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
+                  <div className="text-lg font-bold text-blue-700">{stat.value}</div>
+                  <div className="text-[11px] text-blue-500">{stat.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Password Change Section - only own profile */}
-      {!isViewingOther && (
+      {isOwner && (
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden mb-6">
         <button
           onClick={() => { setShowPasswordForm(!showPasswordForm); setOldPassword(''); setNewPassword(''); setConfirmPassword(''); }}
@@ -532,10 +849,14 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
 
         {activeProfileTab === 'docs' && (
           <>
-            {userDocs.length === 0 ? (
+            {isDocumentsLoading ? (
+              <p className="text-sm text-zinc-400">Đang tải tài liệu...</p>
+            ) : userDocs.length === 0 ? (
               <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center">
                 <FileText size={40} className="mx-auto mb-3 text-zinc-200" />
-                <p className="text-sm text-zinc-400">{isViewingOther ? 'Chưa có tài liệu nào' : 'Bạn chưa lưu tài liệu nào'}</p>
+                <p className="text-sm text-zinc-400">
+                  {isOwner ? 'Bạn chưa có tài liệu nào' : 'Người dùng này chưa có tài liệu nào'}
+                </p>
               </div>
             ) : (
               userDocs.map(doc => (
@@ -547,8 +868,9 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-bold text-zinc-900 truncate">{doc.title}</h3>
                       <p className="text-xs text-zinc-500 truncate">{doc.description}</p>
-                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
-                        <span className="flex items-center gap-1"><Clock size={11} /> {new Date(doc.updatedAt).toLocaleDateString('vi-VN')}</span>
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
+                        <span className="flex items-center gap-1"><Clock size={11} /> {timeAgo(doc.updatedAt)}</span>
+                        <span className="flex items-center gap-1"><Download size={11} /> {doc.downloadCount ?? 0} lượt tải</span>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                           doc.status === 'approved' ? 'bg-green-100 text-green-700'
                           : doc.status === 'completed' ? 'bg-blue-100 text-blue-700'
@@ -558,8 +880,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         </span>
                       </div>
                     </div>
-                    {/* Preview + Load + Clone buttons */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                       <button
                         onClick={() => openPreview(doc)}
                         className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
@@ -567,6 +888,22 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                       >
                         <Eye size={14} />
                         <span className="hidden sm:inline">Xem trước</span>
+                      </button>
+                      <button
+                        onClick={() => exportPdf(doc)}
+                        className="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                        title="Tải PDF"
+                      >
+                        <FileDown size={14} />
+                        <span className="hidden sm:inline">PDF</span>
+                      </button>
+                      <button
+                        onClick={() => exportWord(doc)}
+                        className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                        title="Tải Word"
+                      >
+                        <FileText size={14} />
+                        <span className="hidden sm:inline">Word</span>
                       </button>
                       {isViewingOther && (
                         <button
@@ -579,7 +916,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         </button>
                       )}
                       <button
-                        onClick={() => handleLoadDoc(doc.dataSnapshot)}
+                        onClick={() => handleLoadDoc(doc)}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
                         title={isViewingOther ? 'Tải về và mở' : 'Mở trong trình soạn thảo'}
                       >
@@ -595,334 +932,140 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
         )}
 
         {activeProfileTab === 'activity' && (
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-zinc-100">
-              <h3 className="text-sm font-bold text-zinc-700">Hoạt động gần đây</h3>
-            </div>
-            <div className="divide-y divide-zinc-50">
-              {(() => {
-                const activities: { type: string; text: string; time: string; icon: any; color: string }[] = [];
+          <div className="space-y-4">
+            {isOwner && userDocs.length > 0 && (
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-zinc-100">
+                  <h3 className="text-sm font-bold text-zinc-700">Lịch sử tải tài liệu</h3>
+                  <p className="text-xs text-zinc-400 mt-1">Chỉ chủ sở hữu mới xem được lịch sử tải của từng tài liệu</p>
+                </div>
+                <div className="p-4 border-b border-zinc-100 flex flex-wrap gap-2">
+                  {userDocs.map(doc => (
+                    <button
+                      key={doc.id}
+                      onClick={() => setDownloadHistoryDocId(current => current === doc.id ? null : doc.id)}
+                      className={`px-3 py-2 rounded-xl text-xs font-medium transition-all ${downloadHistoryDocId === doc.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}
+                    >
+                      {doc.title}
+                    </button>
+                  ))}
+                </div>
+                <div className="divide-y divide-zinc-50">
+                  {!downloadHistoryDocId ? (
+                    <div className="p-6 text-sm text-zinc-400">Chọn một tài liệu để xem lịch sử tải</div>
+                  ) : currentDownloadHistory.length === 0 ? (
+                    <div className="p-6 text-sm text-zinc-400">Tài liệu này chưa có lượt tải nào</div>
+                  ) : (
+                    currentDownloadHistory.map(record => (
+                      <div key={record.id} className="px-4 py-3 flex items-start justify-between gap-3 hover:bg-zinc-50 transition-colors">
+                        <div>
+                          <p className="text-sm font-medium text-zinc-700">{record.downloader.name || record.downloader.email}</p>
+                          <p className="text-xs text-zinc-400">{record.downloader.email}</p>
+                        </div>
+                        <span className="text-xs text-zinc-400">{timeAgo(record.createdAt)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
-                userPosts.forEach(p => {
-                  activities.push({
-                    type: 'post',
-                    text: `Đã đăng bài: "${p.content.slice(0, 60)}${p.content.length > 60 ? '...' : ''}"`,
-                    time: p.createdAt,
-                    icon: FileText,
-                    color: 'blue'
-                  });
-                });
+            <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-zinc-100">
+                <h3 className="text-sm font-bold text-zinc-700">Hoạt động gần đây</h3>
+              </div>
+              <div className="divide-y divide-zinc-50">
+                {(() => {
+                  const activityUserId = profileUser.id;
+                  const activities: { type: string; text: string; time: string; icon: any; color: string }[] = [];
 
-                posts.forEach(p => {
-                  p.comments.filter(c => c.authorId === user.id).forEach(c => {
+                  userPosts.forEach(p => {
                     activities.push({
-                      type: 'comment',
-                      text: `Đã bình luận: "${c.content.slice(0, 50)}${c.content.length > 50 ? '...' : ''}"`,
-                      time: c.createdAt,
-                      icon: MessageCircle,
-                      color: 'green'
-                    });
-                  });
-                  if (p.likes.includes(user.id)) {
-                    activities.push({
-                      type: 'like',
-                      text: `Đã thích bài viết của ${p.authorName}`,
+                      type: 'post',
+                      text: `Đã đăng bài: "${p.content.slice(0, 60)}${p.content.length > 60 ? '...' : ''}"`,
                       time: p.createdAt,
-                      icon: Heart,
-                      color: 'red'
+                      icon: FileText,
+                      color: 'blue'
                     });
-                  }
-                });
-
-                userDocs.forEach(d => {
-                  activities.push({
-                    type: 'doc',
-                    text: `Đã lưu tài liệu: "${d.title}"`,
-                    time: d.createdAt,
-                    icon: FileText,
-                    color: 'purple'
                   });
-                });
 
-                activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+                  posts.forEach(p => {
+                    p.comments.filter(c => c.authorId === activityUserId).forEach(c => {
+                      activities.push({
+                        type: 'comment',
+                        text: `Đã bình luận: "${c.content.slice(0, 50)}${c.content.length > 50 ? '...' : ''}"`,
+                        time: c.createdAt,
+                        icon: MessageCircle,
+                        color: 'green'
+                      });
+                    });
+                    if (p.likes.includes(activityUserId)) {
+                      activities.push({
+                        type: 'like',
+                        text: `Đã thích bài viết của ${p.authorName}`,
+                        time: p.createdAt,
+                        icon: Heart,
+                        color: 'red'
+                      });
+                    }
+                  });
 
-                if (activities.length === 0) {
-                  return (
-                    <div className="p-8 text-center">
-                      <Clock size={32} className="mx-auto mb-2 text-zinc-200" />
-                      <p className="text-sm text-zinc-400">Chưa có hoạt động nào</p>
-                    </div>
-                  );
-                }
+                  userDocs.forEach(d => {
+                    activities.push({
+                      type: 'doc',
+                      text: `Đã lưu tài liệu: "${d.title}"`,
+                      time: d.createdAt,
+                      icon: FileText,
+                      color: 'purple'
+                    });
+                  });
 
-                return activities.slice(0, 20).map((act, i) => {
-                  const Icon = act.icon;
-                  return (
-                    <div key={i} className="px-4 py-3 flex items-start gap-3 hover:bg-zinc-50 transition-colors">
-                      <div className={`w-8 h-8 bg-${act.color}-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                        <Icon size={14} className={`text-${act.color}-500`} />
+                  activities.sort((a, b) => (parseAppDate(b.time)?.getTime() ?? 0) - (parseAppDate(a.time)?.getTime() ?? 0));
+
+                  if (activities.length === 0) {
+                    return (
+                      <div className="p-8 text-center">
+                        <Clock size={32} className="mx-auto mb-2 text-zinc-200" />
+                        <p className="text-sm text-zinc-400">Chưa có hoạt động nào</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-zinc-700 truncate">{act.text}</p>
-                        <span className="text-[11px] text-zinc-400">{timeAgo(act.time)}</span>
+                    );
+                  }
+
+                  return activities.slice(0, 20).map((act, i) => {
+                    const Icon = act.icon;
+                    return (
+                      <div key={i} className="px-4 py-3 flex items-start gap-3 hover:bg-zinc-50 transition-colors">
+                        <div className={`w-8 h-8 bg-${act.color}-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                          <Icon size={14} className={`text-${act.color}-500`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-zinc-700 truncate">{act.text}</p>
+                          <span className="text-[11px] text-zinc-400">{timeAgo(act.time)}</span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                });
-              })()}
+                    );
+                  });
+                })()}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* ========= Document Preview Modal ========= */}
-      {previewDoc && previewData && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-3 sm:p-6" onClick={() => { setPreviewDoc(null); setPreviewData(null); }}>
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 bg-gradient-to-r from-blue-50 to-cyan-50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                  <FileText size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-zinc-900">{previewDoc.title}</h2>
-                  <p className="text-xs text-zinc-400">{previewDoc.authorName} · {new Date(previewDoc.updatedAt).toLocaleDateString('vi-VN')}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => { setPreviewDoc(null); setPreviewData(null); }}
-                className="p-2 hover:bg-zinc-100 rounded-xl transition-colors"
-              >
-                <X size={18} className="text-zinc-400" />
-              </button>
-            </div>
-
-            {/* Modal body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {/* Thông tin chung */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-                <div className="bg-blue-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Zap size={14} className="text-blue-500" />
-                    <span className="text-xs font-bold text-blue-700 uppercase">Thông tin PA</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Số văn bản:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.soVb}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Ngày lập:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.ngayLap}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Địa danh:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.diaDanh}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Đơn vị TC:</span>
-                      <span className="font-semibold text-zinc-800 text-right ml-2">{previewData.donViThiCong}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-amber-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={14} className="text-amber-500" />
-                    <span className="text-xs font-bold text-amber-700 uppercase">Đặc điểm CT</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Đường dây:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.dz}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Cột:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.cot}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Loại cột:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.loaiCot}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Địa bàn:</span>
-                      <span className="font-semibold text-zinc-800 text-right ml-2 text-xs">{previewData.diaBan}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Hạng mục công việc */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Wrench size={14} className="text-green-500" />
-                  <span className="text-xs font-bold text-green-700 uppercase">Hạng mục công việc</span>
-                </div>
-                <div className="space-y-1.5">
-                  {previewData.jobItems.map((job, i) => (
-                    <div key={i} className="bg-green-50 rounded-lg px-3 py-2 text-sm text-zinc-700 flex items-start gap-2">
-                      <span className="w-5 h-5 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold text-green-700 flex-shrink-0 mt-0.5">{i + 1}</span>
-                      <span>{job}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Thời gian */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                <div className="bg-purple-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar size={14} className="text-purple-500" />
-                    <span className="text-xs font-bold text-purple-700 uppercase">Thời gian</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Bắt đầu:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.tg_gio}h ngày {previewData.tg_soNgay}/{previewData.tg_thang}/{previewData.tg_nam}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Mạch:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.mach}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-rose-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users size={14} className="text-rose-500" />
-                    <span className="text-xs font-bold text-rose-700 uppercase">Nhân sự</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Người lập:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.nguoiLap}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Đội trưởng:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.doiTruong}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Số nhân công:</span>
-                      <span className="font-semibold text-zinc-800">{previewData.personnel?.length || 0} người</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Nhân sự chi tiết */}
-              {previewData.personnel && previewData.personnel.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users size={14} className="text-indigo-500" />
-                    <span className="text-xs font-bold text-indigo-700 uppercase">Danh sách nhân sự ({previewData.personnel.length})</span>
-                  </div>
-                  <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead className="bg-zinc-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-zinc-500 font-bold">Họ tên</th>
-                          <th className="px-3 py-2 text-left text-zinc-500 font-bold">Chức danh</th>
-                          <th className="px-3 py-2 text-left text-zinc-500 font-bold hidden sm:table-cell">Công việc</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {previewData.personnel.slice(0, 10).map(p => (
-                          <tr key={p.id} className="hover:bg-zinc-50">
-                            <td className="px-3 py-2 font-medium text-zinc-800">{p.name}</td>
-                            <td className="px-3 py-2 text-zinc-500">{p.role}</td>
-                            <td className="px-3 py-2 text-zinc-500 hidden sm:table-cell">{p.job}</td>
-                          </tr>
-                        ))}
-                        {previewData.personnel.length > 10 && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-2 text-center text-zinc-400 italic">
-                              +{previewData.personnel.length - 10} người khác...
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Dụng cụ */}
-              {previewData.tools && previewData.tools.filter(t => t.selected).length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Wrench size={14} className="text-zinc-500" />
-                    <span className="text-xs font-bold text-zinc-600 uppercase">
-                      Dụng cụ ({previewData.tools.filter(t => t.selected).length})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {previewData.tools.filter(t => t.selected).slice(0, 15).map(t => (
-                      <span key={t.id} className="px-2.5 py-1 bg-zinc-100 text-zinc-600 text-[11px] rounded-lg">
-                        {t.name}
-                      </span>
-                    ))}
-                    {previewData.tools.filter(t => t.selected).length > 15 && (
-                      <span className="px-2.5 py-1 bg-zinc-100 text-zinc-400 text-[11px] rounded-lg italic">
-                        +{previewData.tools.filter(t => t.selected).length - 15} khác
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal footer */}
-            <div className="px-5 py-4 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50">
-              <div className="flex items-center gap-2">
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                  previewDoc.status === 'approved' ? 'bg-green-100 text-green-700'
-                  : previewDoc.status === 'completed' ? 'bg-blue-100 text-blue-700'
-                  : 'bg-zinc-200 text-zinc-500'
-                }`}>
-                  {previewDoc.status === 'approved' ? 'Đã duyệt' : previewDoc.status === 'completed' ? 'Hoàn thành' : 'Bản nháp'}
-                </span>
-                {previewDoc.tags?.filter(Boolean).map((tag, i) => (
-                  <span key={i} className="px-2 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full">{tag}</span>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setPreviewDoc(null); setPreviewData(null); }}
-                  className="px-4 py-2.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-600 text-sm font-medium rounded-xl transition-all"
-                >
-                  Đóng
-                </button>
-                {isViewingOther && (
-                  <button
-                    onClick={() => {
-                      handleCloneDoc(previewDoc);
-                      setPreviewDoc(null);
-                      setPreviewData(null);
-                    }}
-                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
-                  >
-                    <Copy size={14} /> Sao chép
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    handleLoadDoc(previewDoc.dataSnapshot);
-                    setPreviewDoc(null);
-                    setPreviewData(null);
-                  }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-                >
-                  <Download size={14} /> {isViewingOther ? 'Tải về & Mở' : 'Mở phương án'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DocumentPreviewModal
+        document={previewDoc}
+        data={previewData}
+        onClose={() => { setPreviewDoc(null); setPreviewData(null); }}
+        onOpen={handleLoadDoc}
+        openLabel={isViewingOther ? 'Tải về & Mở' : 'Mở phương án'}
+        onExportPdf={exportPdf}
+        onExportWord={exportWord}
+        onClone={isViewingOther ? handleCloneDoc : undefined}
+        detailMode="detailed"
+        showPersonnelTable
+        showToolsSection
+        showTags
+      />
     </div>
     </div>
   );

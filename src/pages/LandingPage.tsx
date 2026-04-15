@@ -3,6 +3,7 @@ import { Zap, Shield, FileText, Users, ChevronRight, Phone, Mail, MapPin, Clock,
 import { useSocialStore } from '../store/useSocialStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useLandingStore } from '../store/useLandingStore';
+import { formatDateTime, parseAppDate } from '../utils/date';
 
 // Icon name to component map
 const ICON_MAP: Record<string, any> = { Zap, Shield, FileText, Users, BarChart3, Cpu, Award, PlusCircle, ClipboardList, BookOpen, MessageSquare, Phone, Mail, MapPin, Clock, Globe, Search };
@@ -87,8 +88,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
 
   // Dynamic news from social posts
   const dynamicNews = posts.slice(0, 6).map(p => {
-    const date = new Date(p.createdAt);
-    const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+    const parsedDate = parseAppDate(p.createdAt);
+    const dateStr = parsedDate ? formatDateTime(p.createdAt).split(' ')[1] : 'Không rõ ngày';
     const catMap: Record<string, { category: string; catColor: string }> = {
       announcement: { category: 'Thông báo', catColor: 'blue' },
       technical: { category: 'Kỹ thuật', catColor: 'green' },
@@ -247,8 +248,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-16 sm:h-[72px]">
           <button onClick={scrollToTop} className="flex items-center gap-3 cursor-pointer">
             <div className="flex flex-col">
-              <h1 className="text-xl sm:text-2xl font-black text-[#164396] leading-tight tracking-tight">{config.logoTitle}</h1>
-              <p className="text-[8px] sm:text-[9px] text-zinc-400 leading-tight uppercase tracking-[0.15em]">{config.logoSubtitle}</p>
+              <img src="/logo-square.png" alt="Logo" className="h-12 sm:h-14 w-12 sm:w-14 object-contain rounded-full border border-zinc-200 shadow-sm bg-white p-1.5" />
             </div>
           </button>
 
@@ -841,8 +841,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
         <div className="max-w-7xl mx-auto px-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
             <div>
-              <div className="text-lg font-black mb-1">{config.logoTitle}</div>
-              <div className="text-[9px] text-blue-300 uppercase tracking-widest mb-4">{config.logoSubtitle}</div>
+              <img src="/logo-square.png" alt="Logo" className="h-10 object-contain mb-4 rounded-lg bg-white p-1" />
               <p className="text-xs text-blue-300 leading-relaxed">Hệ thống lập phương án tổ chức thi công và biện pháp an toàn sửa chữa lưới điện đang mang điện.</p>
             </div>
             <div>

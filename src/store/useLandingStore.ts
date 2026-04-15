@@ -109,11 +109,11 @@ export interface LandingConfig {
 
 // Default config
 const DEFAULT_CONFIG: LandingConfig = {
-  bannerText: 'Đội Sửa chữa Hotline - Công ty Điện lực Bắc Ninh',
+  bannerText: 'Đoàn kết - Kỷ luật - Sáng tạo',
   utilityHotline: '1900.6769',
   utilityEmail: 'info@npc.com.vn',
-  logoTitle: 'EVNNPC',
-  logoSubtitle: 'Tổng Công ty Điện lực miền Bắc',
+  logoTitle: '/logo.jpeg',
+  logoSubtitle: '',
   heroSlides: [
     {
       id: '1',
@@ -213,8 +213,37 @@ const DEFAULT_CONFIG: LandingConfig = {
   footerDeveloper: 'Phát triển bởi DungDT293',
 };
 
+import { api } from '../utils/api';
+
+function normalizeLandingConfig(config?: Partial<LandingConfig> | null): LandingConfig {
+  const savedConfig = (config || {}) as Partial<LandingConfig>;
+  const mergedConfig = { ...DEFAULT_CONFIG, ...savedConfig } as LandingConfig;
+
+  mergedConfig.contact = { ...DEFAULT_CONFIG.contact, ...(savedConfig.contact || {}) };
+  mergedConfig.customerCareBanner = { ...DEFAULT_CONFIG.customerCareBanner, ...(savedConfig.customerCareBanner || {}) };
+  mergedConfig.stats = Array.isArray(savedConfig.stats) ? savedConfig.stats : DEFAULT_CONFIG.stats;
+  mergedConfig.features = Array.isArray(savedConfig.features) ? savedConfig.features : DEFAULT_CONFIG.features;
+  mergedConfig.quickActions = Array.isArray(savedConfig.quickActions) ? savedConfig.quickActions : DEFAULT_CONFIG.quickActions;
+  mergedConfig.aboutChecklist = Array.isArray(savedConfig.aboutChecklist) ? savedConfig.aboutChecklist : DEFAULT_CONFIG.aboutChecklist;
+  mergedConfig.gallery = Array.isArray(savedConfig.gallery) ? savedConfig.gallery : DEFAULT_CONFIG.gallery;
+  mergedConfig.videos = Array.isArray(savedConfig.videos) ? savedConfig.videos : DEFAULT_CONFIG.videos;
+  mergedConfig.heroSlides = Array.isArray(savedConfig.heroSlides)
+    ? savedConfig.heroSlides.map((slide: any) => ({
+        ...slide,
+        mediaType: slide?.mediaType || 'image',
+      }))
+    : DEFAULT_CONFIG.heroSlides;
+
+  return mergedConfig;
+}
+
 interface LandingStore {
+  fetchConfigFromServer: () => Promise<void>;
+  syncConfigToServer: () => Promise<void>;
   config: LandingConfig;
+  hasUnsavedChanges: boolean;
+  isSaving: boolean;
+  saveError: string | null;
   updateConfig: (updates: Partial<LandingConfig>) => void;
   updateHeroSlide: (id: string, updates: Partial<HeroSlide>) => void;
   addHeroSlide: () => void;
@@ -237,18 +266,55 @@ interface LandingStore {
 
 export const useLandingStore = create<LandingStore>()(
   persist(
-    (set) => ({
-      config: DEFAULT_CONFIG,
+    (set, get) => ({
+      config: normalizeLandingConfig(DEFAULT_CONFIG),
+      hasUnsavedChanges: false,
+      isSaving: false,
+      saveError: null,
+
+      fetchConfigFromServer: async () => {
+        try {
+          const data = await api.get<{ config: LandingConfig | null }>('/landing');
+          if (data.config) {
+            set({
+              config: normalizeLandingConfig(data.config),
+              hasUnsavedChanges: false,
+              isSaving: false,
+              saveError: null,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to fetch landing config:', error);
+        }
+      },
+
+      syncConfigToServer: async () => {
+        set({ isSaving: true, saveError: null });
+        try {
+          const config = get().config;
+          await api.post('/landing', { config });
+          set({ hasUnsavedChanges: false, isSaving: false, saveError: null });
+        } catch (error: any) {
+          const message = error?.message || 'Không thể đồng bộ cấu hình trang chủ';
+          set({ isSaving: false, saveError: message });
+          console.error('Failed to sync landing config:', error);
+          throw error;
+        }
+      },
 
       updateConfig: (updates) => set(state => ({
-        config: { ...state.config, ...updates }
+        config: { ...state.config, ...updates },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateHeroSlide: (id, updates) => set(state => ({
         config: {
           ...state.config,
-          heroSlides: state.config.heroSlides.map(s => s.id === id ? { ...s, ...updates } : s)
-        }
+          heroSlides: state.config.heroSlides.map(s => s.id === id ? { ...s, ...updates } : s),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       addHeroSlide: () => set(state => ({
@@ -263,56 +329,74 @@ export const useLandingStore = create<LandingStore>()(
             bgOverlay: 'linear-gradient(135deg, rgba(13,46,107,0.7) 0%, rgba(22,67,150,0.5) 100%)',
             imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=1600&q=80',
             mediaType: 'image' as const,
-          }]
-        }
+          }],
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       removeHeroSlide: (id) => set(state => ({
         config: {
           ...state.config,
-          heroSlides: state.config.heroSlides.filter(s => s.id !== id)
-        }
+          heroSlides: state.config.heroSlides.filter(s => s.id !== id),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateFeature: (id, updates) => set(state => ({
         config: {
           ...state.config,
-          features: state.config.features.map(f => f.id === id ? { ...f, ...updates } : f)
-        }
+          features: state.config.features.map(f => f.id === id ? { ...f, ...updates } : f),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateQuickAction: (id, updates) => set(state => ({
         config: {
           ...state.config,
-          quickActions: state.config.quickActions.map(a => a.id === id ? { ...a, ...updates } : a)
-        }
+          quickActions: state.config.quickActions.map(a => a.id === id ? { ...a, ...updates } : a),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateContact: (updates) => set(state => ({
         config: {
           ...state.config,
-          contact: { ...state.config.contact, ...updates }
-        }
+          contact: { ...state.config.contact, ...updates },
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateAboutChecklist: (index, value) => set(state => {
         const newList = [...state.config.aboutChecklist];
         newList[index] = value;
-        return { config: { ...state.config, aboutChecklist: newList } };
+        return {
+          config: { ...state.config, aboutChecklist: newList },
+          hasUnsavedChanges: true,
+          saveError: null,
+        };
       }),
 
       addAboutChecklist: () => set(state => ({
         config: {
           ...state.config,
-          aboutChecklist: [...state.config.aboutChecklist, 'Mục mới']
-        }
+          aboutChecklist: [...state.config.aboutChecklist, 'Mục mới'],
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       removeAboutChecklist: (index) => set(state => ({
         config: {
           ...state.config,
-          aboutChecklist: state.config.aboutChecklist.filter((_, i) => i !== index)
-        }
+          aboutChecklist: state.config.aboutChecklist.filter((_, i) => i !== index),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       addGalleryItem: () => set(state => ({
@@ -323,22 +407,28 @@ export const useLandingStore = create<LandingStore>()(
             imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=800&q=80',
             caption: 'Hình ảnh mới',
             category: 'Chung',
-          }]
-        }
+          }],
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateGalleryItem: (id, updates) => set(state => ({
         config: {
           ...state.config,
-          gallery: state.config.gallery.map(g => g.id === id ? { ...g, ...updates } : g)
-        }
+          gallery: state.config.gallery.map(g => g.id === id ? { ...g, ...updates } : g),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       removeGalleryItem: (id) => set(state => ({
         config: {
           ...state.config,
-          gallery: state.config.gallery.filter(g => g.id !== id)
-        }
+          gallery: state.config.gallery.filter(g => g.id !== id),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       addVideoItem: () => set(state => ({
@@ -350,55 +440,57 @@ export const useLandingStore = create<LandingStore>()(
             thumbnailUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=600&q=80',
             videoUrl: '',
             duration: '0:00',
-          }]
-        }
+          }],
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateVideoItem: (id, updates) => set(state => ({
         config: {
           ...state.config,
-          videos: state.config.videos.map(v => v.id === id ? { ...v, ...updates } : v)
-        }
+          videos: state.config.videos.map(v => v.id === id ? { ...v, ...updates } : v),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       removeVideoItem: (id) => set(state => ({
         config: {
           ...state.config,
-          videos: state.config.videos.filter(v => v.id !== id)
-        }
+          videos: state.config.videos.filter(v => v.id !== id),
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
       updateCustomerCareBanner: (updates) => set(state => ({
         config: {
           ...state.config,
-          customerCareBanner: { ...state.config.customerCareBanner, ...updates }
-        }
+          customerCareBanner: { ...state.config.customerCareBanner, ...updates },
+        },
+        hasUnsavedChanges: true,
+        saveError: null,
       })),
 
-      resetToDefault: () => set({ config: DEFAULT_CONFIG }),
+      resetToDefault: () => set({
+        config: normalizeLandingConfig(DEFAULT_CONFIG),
+        hasUnsavedChanges: true,
+        saveError: null,
+      }),
     }),
     {
       name: 'patctc-landing',
-      // Merge saved config with DEFAULT_CONFIG to fill missing fields from new updates
+      partialize: (state) => ({ config: state.config }),
       merge: (persisted: any, current: any) => {
         if (!persisted || !persisted.config) return current;
-        const savedConfig = persisted.config;
-        // Deep merge: fill any missing top-level config keys from DEFAULT_CONFIG
-        const mergedConfig = { ...DEFAULT_CONFIG, ...savedConfig };
-        // Ensure nested objects also have defaults
-        mergedConfig.contact = { ...DEFAULT_CONFIG.contact, ...(savedConfig.contact || {}) };
-        mergedConfig.customerCareBanner = { ...DEFAULT_CONFIG.customerCareBanner, ...(savedConfig.customerCareBanner || {}) };
-        // Ensure arrays exist
-        if (!mergedConfig.gallery || !Array.isArray(mergedConfig.gallery)) mergedConfig.gallery = DEFAULT_CONFIG.gallery;
-        if (!mergedConfig.videos || !Array.isArray(mergedConfig.videos)) mergedConfig.videos = DEFAULT_CONFIG.videos;
-        // Ensure heroSlides have mediaType
-        if (mergedConfig.heroSlides) {
-          mergedConfig.heroSlides = mergedConfig.heroSlides.map((s: any) => ({
-            ...s,
-            mediaType: s.mediaType || 'image',
-          }));
-        }
-        return { ...current, config: mergedConfig };
+        return {
+          ...current,
+          config: normalizeLandingConfig(persisted.config),
+          hasUnsavedChanges: false,
+          isSaving: false,
+          saveError: null,
+        };
       },
     }
   )

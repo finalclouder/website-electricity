@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useAuthStore } from './useAuthStore';
+import { api } from '../utils/api';
 
 export interface SocialPost {
   id: string;
@@ -10,10 +12,10 @@ export interface SocialPost {
   content: string;
   images: string[];
   attachmentName?: string;
-  likes: string[]; // user IDs who liked
+  likes: string[];
   comments: SocialComment[];
   shares: number;
-  sharedBy: string[]; // user IDs who shared
+  sharedBy: string[];
   createdAt: string;
   category: 'general' | 'technical' | 'safety' | 'announcement';
 }
@@ -26,8 +28,8 @@ export interface SocialComment {
   content: string;
   createdAt: string;
   likes: string[];
-  parentId?: string; // For reply threading
-  editedAt?: string; // Track edits
+  parentId?: string;
+  editedAt?: string;
 }
 
 export interface SavedDocument {
@@ -36,208 +38,563 @@ export interface SavedDocument {
   description: string;
   authorId: string;
   authorName: string;
-  dataSnapshot: string; // JSON stringified PATCTCData
+  dataSnapshot: string;
   createdAt: string;
   updatedAt: string;
   status: 'draft' | 'completed' | 'approved';
   tags: string[];
+  downloadCount?: number;
+}
+
+export interface FollowUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  bio: string;
+  role: 'admin' | 'user';
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt?: string;
+}
+
+export interface RelationshipSummary {
+  targetUserId: string;
+  isFollowing: boolean;
+  isFollowedBy: boolean;
+  followerCount: number;
+  followingCount: number;
+  friendStatus: 'none' | 'incoming_request' | 'outgoing_request' | 'friends';
+}
+
+export interface FriendRequest {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  sender: FollowUserSummary;
+  receiver: FollowUserSummary;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FriendConnection {
+  requestId: string;
+  userId: string;
+  user: FollowUserSummary;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  actorId: string | null;
+  actor: FollowUserSummary | null;
+  type: 'follow' | 'friend_request' | 'friend_accept' | 'document_download';
+  entityType: 'user' | 'friend_request' | 'document';
+  entityId: string;
+  dataJson: Record<string, any>;
+  isRead: boolean;
+  createdAt: string;
+  message: string;
+}
+
+export interface DocumentDownloadRecord {
+  id: string;
+  documentId: string;
+  downloaderId: string;
+  ownerId: string;
+  downloader: FollowUserSummary;
+  owner: FollowUserSummary;
+  createdAt: string;
 }
 
 interface SocialState {
   posts: SocialPost[];
   savedDocuments: SavedDocument[];
+  isLoaded: boolean;
+  relationshipsByUserId: Record<string, RelationshipSummary>;
+  followersByUserId: Record<string, FollowUserSummary[]>;
+  followingByUserId: Record<string, FollowUserSummary[]>;
+  incomingFriendRequests: FriendRequest[];
+  outgoingFriendRequests: FriendRequest[];
+  friends: FriendConnection[];
+  notifications: AppNotification[];
+  unreadNotificationCount: number;
+  documentDownloadsByDocumentId: Record<string, DocumentDownloadRecord[]>;
 
-  // Social actions
-  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'sharedBy' | 'createdAt'>) => void;
-  deletePost: (postId: string) => void;
-  toggleLike: (postId: string, userId: string) => void;
-  addComment: (postId: string, comment: Omit<SocialComment, 'id' | 'createdAt' | 'likes'>) => void;
-  deleteComment: (postId: string, commentId: string) => void;
-  editComment: (postId: string, commentId: string, newContent: string) => void;
-  toggleCommentLike: (postId: string, commentId: string, userId: string) => void;
-  sharePost: (postId: string, userId: string) => void;
+  fetchPosts: () => Promise<void>;
+  fetchDocuments: () => Promise<void>;
+  fetchRelationship: (userId: string) => Promise<void>;
+  fetchFollowers: (userId: string) => Promise<void>;
+  fetchFollowing: (userId: string) => Promise<void>;
+  fetchFriends: () => Promise<void>;
+  fetchFriendRequests: () => Promise<void>;
+  fetchNotifications: () => Promise<void>;
+  fetchUnreadNotificationCount: () => Promise<void>;
+  fetchDocumentDownloads: (documentId: string) => Promise<void>;
 
-  // Document actions
-  saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateDocument: (docId: string, updates: Partial<SavedDocument>) => void;
-  deleteDocument: (docId: string) => void;
+  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'sharedBy' | 'createdAt'>) => Promise<void>;
+  deletePost: (postId: string) => Promise<void>;
+  toggleLike: (postId: string, userId: string) => Promise<void>;
+  addComment: (postId: string, comment: Omit<SocialComment, 'id' | 'createdAt' | 'likes'>) => Promise<void>;
+  deleteComment: (postId: string, commentId: string) => Promise<void>;
+  editComment: (postId: string, commentId: string, newContent: string) => Promise<void>;
+  toggleCommentLike: (postId: string, commentId: string, userId: string) => Promise<void>;
+  sharePost: (postId: string, userId: string) => Promise<void>;
+  followUser: (targetUserId: string) => Promise<void>;
+  unfollowUser: (targetUserId: string) => Promise<void>;
+  sendFriendRequest: (targetUserId: string) => Promise<void>;
+  acceptFriendRequest: (requestId: string) => Promise<void>;
+  rejectFriendRequest: (requestId: string) => Promise<void>;
+  cancelFriendRequest: (requestId: string) => Promise<void>;
+  markNotificationRead: (notificationId: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+
+  saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateDocument: (docId: string, updates: Partial<SavedDocument>) => Promise<void>;
+  deleteDocument: (docId: string) => Promise<void>;
+  trackDocumentDownload: (documentId: string) => Promise<void>;
 }
-
-// Seed data
-const SEED_POSTS: SocialPost[] = [
-  {
-    id: 'p1',
-    authorId: '1',
-    authorName: 'Nguyễn Tuấn Anh',
-    authorAvatar: '',
-    authorRole: 'admin',
-    content: '🔧 Thông báo: Đã cập nhật mẫu phương án thi công mới cho tuyến 471 E7.33. Anh em kiểm tra và áp dụng từ ngày mai nhé!\n\nĐiểm thay đổi chính:\n- Bổ sung biện pháp an toàn cho khu vực có dây chéo\n- Cập nhật danh sách dụng cụ theo quy chuẩn mới\n- Thêm checklist kiểm tra trước khi thi công',
-    images: [],
-    likes: ['2'],
-    comments: [
-      {
-        id: 'c1',
-        authorId: '2',
-        authorName: 'Chu Đình Dũng',
-        authorAvatar: '',
-        content: 'Em đã xem, rất chi tiết anh ạ. Em sẽ áp dụng cho PA tuần sau.',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        likes: ['1']
-      }
-    ],
-    shares: 3,
-    sharedBy: ['2'],
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    category: 'announcement'
-  },
-  {
-    id: 'p2',
-    authorId: '2',
-    authorName: 'Chu Đình Dũng',
-    authorAvatar: '',
-    authorRole: 'user',
-    content: '⚡ Chia sẻ kinh nghiệm: Khi thi công hotline tại khu vực giao thông đông, nhớ bố trí thêm 2 người canh gác hai đầu đường và sử dụng cọc rào + băng nilong phản quang.\n\nAn toàn là trên hết! 🛡️',
-    images: [],
-    likes: ['1'],
-    comments: [],
-    shares: 5,
-    sharedBy: ['1'],
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    category: 'safety'
-  },
-  {
-    id: 'p3',
-    authorId: '1',
-    authorName: 'Nguyễn Tuấn Anh',
-    authorAvatar: '',
-    authorRole: 'admin',
-    content: '📋 Nhắc nhở: Tất cả phương án thi công phải được lưu trên hệ thống trước 17h thứ 6 hàng tuần để kịp duyệt vào đầu tuần sau.',
-    images: [],
-    likes: [],
-    comments: [],
-    shares: 0,
-    sharedBy: [],
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    category: 'announcement'
-  }
-];
 
 export const useSocialStore = create<SocialState>()(
   persist(
     (set, get) => ({
-      posts: SEED_POSTS,
+      posts: [],
       savedDocuments: [],
+      isLoaded: false,
+      relationshipsByUserId: {},
+      followersByUserId: {},
+      followingByUserId: {},
+      incomingFriendRequests: [],
+      outgoingFriendRequests: [],
+      friends: [],
+      notifications: [],
+      unreadNotificationCount: 0,
+      documentDownloadsByDocumentId: {},
 
-      addPost: (post) => set(state => ({
-        posts: [{
-          ...post,
-          id: Date.now().toString(),
-          likes: [],
-          comments: [],
-          shares: 0,
-          sharedBy: [],
-          createdAt: new Date().toISOString()
-        }, ...state.posts]
-      })),
+      fetchPosts: async () => {
+        try {
+          const posts = await api.get<SocialPost[]>('/posts');
+          set({ posts, isLoaded: true });
+        } catch (error) {
+          console.error('Fetch posts error:', error);
+        }
+      },
 
-      deletePost: (postId) => set(state => ({
-        posts: state.posts.filter(p => p.id !== postId)
-      })),
+      fetchDocuments: async () => {
+        try {
+          const docs = await api.get<SavedDocument[]>('/documents');
+          set({ savedDocuments: docs });
+        } catch (error) {
+          console.error('Fetch documents error:', error);
+        }
+      },
 
-      toggleLike: (postId, userId) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          const liked = p.likes.includes(userId);
-          return {
-            ...p,
-            likes: liked ? p.likes.filter(id => id !== userId) : [...p.likes, userId]
-          };
-        })
-      })),
+      fetchRelationship: async (userId) => {
+        try {
+          const relationship = await api.get<RelationshipSummary>(`/social/relationships/${userId}`);
+          set(state => ({
+            relationshipsByUserId: {
+              ...state.relationshipsByUserId,
+              [userId]: relationship,
+            },
+          }));
+        } catch (error) {
+          console.error('Fetch relationship error:', error);
+        }
+      },
 
-      addComment: (postId, comment) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          return {
-            ...p,
-            comments: [...p.comments, {
-              ...comment,
-              id: Date.now().toString(),
+      fetchFollowers: async (userId) => {
+        try {
+          const followers = await api.get<FollowUserSummary[]>(`/social/users/${userId}/followers`);
+          set(state => ({
+            followersByUserId: {
+              ...state.followersByUserId,
+              [userId]: followers,
+            },
+          }));
+        } catch (error) {
+          console.error('Fetch followers error:', error);
+        }
+      },
+
+      fetchFollowing: async (userId) => {
+        try {
+          const following = await api.get<FollowUserSummary[]>(`/social/users/${userId}/following`);
+          set(state => ({
+            followingByUserId: {
+              ...state.followingByUserId,
+              [userId]: following,
+            },
+          }));
+        } catch (error) {
+          console.error('Fetch following error:', error);
+        }
+      },
+
+      fetchFriends: async () => {
+        try {
+          const friends = await api.get<FriendConnection[]>('/social/friends');
+          set({ friends });
+        } catch (error) {
+          console.error('Fetch friends error:', error);
+        }
+      },
+
+      fetchFriendRequests: async () => {
+        try {
+          const result = await api.get<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>('/social/friend-requests');
+          set({
+            incomingFriendRequests: result.incoming,
+            outgoingFriendRequests: result.outgoing,
+          });
+        } catch (error) {
+          console.error('Fetch friend requests error:', error);
+        }
+      },
+
+      fetchNotifications: async () => {
+        try {
+          const notifications = await api.get<AppNotification[]>('/social/notifications');
+          set({ notifications });
+        } catch (error) {
+          console.error('Fetch notifications error:', error);
+        }
+      },
+
+      fetchUnreadNotificationCount: async () => {
+        try {
+          const result = await api.get<{ count: number }>('/social/notifications/unread-count');
+          set({ unreadNotificationCount: result.count });
+        } catch (error) {
+          console.error('Fetch unread notification count error:', error);
+        }
+      },
+
+      fetchDocumentDownloads: async (documentId) => {
+        try {
+          const downloads = await api.get<DocumentDownloadRecord[]>(`/documents/${documentId}/downloads`);
+          set(state => ({
+            documentDownloadsByDocumentId: {
+              ...state.documentDownloadsByDocumentId,
+              [documentId]: downloads,
+            },
+          }));
+        } catch (error) {
+          console.error('Fetch document downloads error:', error);
+        }
+      },
+
+      addPost: async (post) => {
+        try {
+          const posts = await api.post<SocialPost[]>('/posts', {
+            content: post.content,
+            images: post.images,
+            attachmentName: post.attachmentName,
+            category: post.category,
+          });
+          set({ posts });
+        } catch (error) {
+          console.error('Add post error:', error);
+        }
+      },
+
+      deletePost: async (postId) => {
+        try {
+          await api.delete(`/posts/${postId}`);
+          set(state => ({ posts: state.posts.filter(p => p.id !== postId) }));
+        } catch (error) {
+          console.error('Delete post error:', error);
+        }
+      },
+
+      toggleLike: async (postId, userId) => {
+        set(state => ({
+          posts: state.posts.map(p => {
+            if (p.id !== postId) return p;
+            const liked = p.likes.includes(userId);
+            return { ...p, likes: liked ? p.likes.filter(id => id !== userId) : [...p.likes, userId] };
+          }),
+        }));
+        try {
+          await api.post(`/posts/${postId}/like`);
+        } catch {
+          get().fetchPosts();
+        }
+      },
+
+      addComment: async (postId, comment) => {
+        try {
+          await api.post(`/posts/${postId}/comments`, {
+            content: comment.content,
+            parentId: comment.parentId,
+          });
+          get().fetchPosts();
+        } catch (error) {
+          console.error('Add comment error:', error);
+        }
+      },
+
+      deleteComment: async (postId, commentId) => {
+        try {
+          await api.delete(`/posts/${postId}/comments/${commentId}`);
+          set(state => ({
+            posts: state.posts.map(p => {
+              if (p.id !== postId) return p;
+              return { ...p, comments: p.comments.filter(c => c.id !== commentId && c.parentId !== commentId) };
+            }),
+          }));
+        } catch (error) {
+          console.error('Delete comment error:', error);
+        }
+      },
+
+      editComment: async (postId, commentId, newContent) => {
+        try {
+          await api.put(`/posts/${postId}/comments/${commentId}`, { content: newContent });
+          set(state => ({
+            posts: state.posts.map(p => {
+              if (p.id !== postId) return p;
+              return {
+                ...p,
+                comments: p.comments.map(c => c.id === commentId ? { ...c, content: newContent, editedAt: new Date().toISOString() } : c),
+              };
+            }),
+          }));
+        } catch (error) {
+          console.error('Edit comment error:', error);
+        }
+      },
+
+      toggleCommentLike: async (postId, commentId, userId) => {
+        set(state => ({
+          posts: state.posts.map(p => {
+            if (p.id !== postId) return p;
+            return {
+              ...p,
+              comments: p.comments.map(c => {
+                if (c.id !== commentId) return c;
+                const liked = c.likes.includes(userId);
+                return { ...c, likes: liked ? c.likes.filter(id => id !== userId) : [...c.likes, userId] };
+              }),
+            };
+          }),
+        }));
+        try {
+          await api.post(`/posts/${postId}/comments/${commentId}/like`);
+        } catch {
+          get().fetchPosts();
+        }
+      },
+
+      sharePost: async (postId, userId) => {
+        set(state => ({
+          posts: state.posts.map(p => {
+            if (p.id !== postId) return p;
+            const alreadyShared = (p.sharedBy || []).includes(userId);
+            return {
+              ...p,
+              shares: alreadyShared ? p.shares : p.shares + 1,
+              sharedBy: alreadyShared ? p.sharedBy : [...(p.sharedBy || []), userId],
+            };
+          }),
+        }));
+        try {
+          await api.post(`/posts/${postId}/share`);
+        } catch {
+          get().fetchPosts();
+        }
+      },
+
+      followUser: async (targetUserId) => {
+        try {
+          const currentUserId = useAuthStore.getState().user?.id;
+          const result = await api.post<{ message: string; relationship: RelationshipSummary }>(`/social/users/${targetUserId}/follow`);
+          set(state => ({
+            relationshipsByUserId: {
+              ...state.relationshipsByUserId,
+              [targetUserId]: result.relationship,
+            },
+          }));
+          await Promise.all([
+            get().fetchFollowers(targetUserId),
+            currentUserId ? get().fetchFollowing(currentUserId) : Promise.resolve(),
+          ]);
+        } catch (error) {
+          console.error('Follow user error:', error);
+        }
+      },
+
+      unfollowUser: async (targetUserId) => {
+        try {
+          const currentUserId = useAuthStore.getState().user?.id;
+          const result = await api.delete<{ message: string; relationship: RelationshipSummary }>(`/social/users/${targetUserId}/follow`);
+          set(state => ({
+            relationshipsByUserId: {
+              ...state.relationshipsByUserId,
+              [targetUserId]: result.relationship,
+            },
+          }));
+          await Promise.all([
+            get().fetchFollowers(targetUserId),
+            currentUserId ? get().fetchFollowing(currentUserId) : Promise.resolve(),
+          ]);
+        } catch (error) {
+          console.error('Unfollow user error:', error);
+        }
+      },
+
+      sendFriendRequest: async (targetUserId) => {
+        try {
+          const result = await api.post<{ message: string; incoming: FriendRequest[]; outgoing: FriendRequest[] }>(`/social/friend-requests/${targetUserId}`);
+          set({
+            incomingFriendRequests: result.incoming,
+            outgoingFriendRequests: result.outgoing,
+          });
+          await get().fetchRelationship(targetUserId);
+        } catch (error) {
+          console.error('Send friend request error:', error);
+        }
+      },
+
+      acceptFriendRequest: async (requestId) => {
+        const existingRequest = get().incomingFriendRequests.find(request => request.id === requestId);
+        try {
+          const result = await api.post<{ message: string; incoming: FriendRequest[]; outgoing: FriendRequest[]; friends: FriendConnection[] }>(`/social/friend-requests/${requestId}/accept`);
+          set({
+            incomingFriendRequests: result.incoming,
+            outgoingFriendRequests: result.outgoing,
+            friends: result.friends,
+          });
+          if (existingRequest) {
+            await get().fetchRelationship(existingRequest.senderId);
+          }
+        } catch (error) {
+          console.error('Accept friend request error:', error);
+        }
+      },
+
+      rejectFriendRequest: async (requestId) => {
+        const existingRequest = get().incomingFriendRequests.find(request => request.id === requestId);
+        try {
+          const result = await api.post<{ message: string; incoming: FriendRequest[]; outgoing: FriendRequest[] }>(`/social/friend-requests/${requestId}/reject`);
+          set({
+            incomingFriendRequests: result.incoming,
+            outgoingFriendRequests: result.outgoing,
+          });
+          if (existingRequest) {
+            await get().fetchRelationship(existingRequest.senderId);
+          }
+        } catch (error) {
+          console.error('Reject friend request error:', error);
+        }
+      },
+
+      cancelFriendRequest: async (requestId) => {
+        const existingRequest = get().outgoingFriendRequests.find(request => request.id === requestId);
+        try {
+          const result = await api.delete<{ message: string; incoming: FriendRequest[]; outgoing: FriendRequest[] }>(`/social/friend-requests/${requestId}`);
+          set({
+            incomingFriendRequests: result.incoming,
+            outgoingFriendRequests: result.outgoing,
+          });
+          if (existingRequest) {
+            await get().fetchRelationship(existingRequest.receiverId);
+          }
+        } catch (error) {
+          console.error('Cancel friend request error:', error);
+        }
+      },
+
+      markNotificationRead: async (notificationId) => {
+        try {
+          const result = await api.post<{ message: string; count: number }>(`/social/notifications/${notificationId}/read`);
+          set(state => ({
+            notifications: state.notifications.map(notification =>
+              notification.id === notificationId ? { ...notification, isRead: true } : notification
+            ),
+            unreadNotificationCount: result.count,
+          }));
+        } catch (error) {
+          console.error('Mark notification read error:', error);
+        }
+      },
+
+      markAllNotificationsRead: async () => {
+        try {
+          await api.post<{ message: string; count: number }>('/social/notifications/read-all');
+          set(state => ({
+            notifications: state.notifications.map(notification => ({ ...notification, isRead: true })),
+            unreadNotificationCount: 0,
+          }));
+        } catch (error) {
+          console.error('Mark all notifications read error:', error);
+        }
+      },
+
+      saveDocument: async (doc) => {
+        try {
+          const result = await api.post<{ id: string }>('/documents', {
+            title: doc.title,
+            description: doc.description,
+            dataSnapshot: doc.dataSnapshot,
+            status: doc.status,
+            tags: doc.tags,
+          });
+          set(state => ({
+            savedDocuments: [{
+              ...doc,
+              id: result.id,
               createdAt: new Date().toISOString(),
-              likes: []
-            }]
-          };
-        })
-      })),
+              updatedAt: new Date().toISOString(),
+              downloadCount: 0,
+            }, ...state.savedDocuments],
+          }));
+        } catch (error) {
+          console.error('Save document error:', error);
+        }
+      },
 
-      deleteComment: (postId, commentId) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          // Also delete replies to this comment
-          return { ...p, comments: p.comments.filter(c => c.id !== commentId && c.parentId !== commentId) };
-        })
-      })),
+      updateDocument: async (docId, updates) => {
+        try {
+          await api.put(`/documents/${docId}`, updates);
+          set(state => ({
+            savedDocuments: state.savedDocuments.map(d =>
+              d.id === docId ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
+            ),
+          }));
+        } catch (error) {
+          console.error('Update document error:', error);
+        }
+      },
 
-      editComment: (postId, commentId, newContent) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          return {
-            ...p,
-            comments: p.comments.map(c => {
-              if (c.id !== commentId) return c;
-              return { ...c, content: newContent, editedAt: new Date().toISOString() };
-            })
-          };
-        })
-      })),
+      deleteDocument: async (docId) => {
+        try {
+          await api.delete(`/documents/${docId}`);
+          set(state => ({
+            savedDocuments: state.savedDocuments.filter(d => d.id !== docId),
+          }));
+        } catch (error) {
+          console.error('Delete document error:', error);
+        }
+      },
 
-      toggleCommentLike: (postId, commentId, userId) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          return {
-            ...p,
-            comments: p.comments.map(c => {
-              if (c.id !== commentId) return c;
-              const liked = c.likes.includes(userId);
-              return { ...c, likes: liked ? c.likes.filter(id => id !== userId) : [...c.likes, userId] };
-            })
-          };
-        })
-      })),
-
-      sharePost: (postId, userId) => set(state => ({
-        posts: state.posts.map(p => {
-          if (p.id !== postId) return p;
-          const alreadyShared = (p.sharedBy || []).includes(userId);
-          return {
-            ...p,
-            shares: alreadyShared ? p.shares : p.shares + 1,
-            sharedBy: alreadyShared ? p.sharedBy : [...(p.sharedBy || []), userId]
-          };
-        })
-      })),
-
-      saveDocument: (doc) => set(state => ({
-        savedDocuments: [{
-          ...doc,
-          id: Date.now().toString(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }, ...state.savedDocuments]
-      })),
-
-      updateDocument: (docId, updates) => set(state => ({
-        savedDocuments: state.savedDocuments.map(d =>
-          d.id === docId ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
-        )
-      })),
-
-      deleteDocument: (docId) => set(state => ({
-        savedDocuments: state.savedDocuments.filter(d => d.id !== docId)
-      }))
+      trackDocumentDownload: async (documentId) => {
+        try {
+          await api.post(`/documents/${documentId}/download`);
+          await get().fetchDocuments();
+        } catch (error) {
+          console.error('Track document download error:', error);
+        }
+      },
     }),
     {
-      name: 'patctc-social'
+      name: 'patctc-social',
+      partialize: (state) => ({
+        posts: state.posts,
+        savedDocuments: state.savedDocuments,
+      }),
     }
   )
 );

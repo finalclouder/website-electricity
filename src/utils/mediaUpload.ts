@@ -1,8 +1,9 @@
 /**
  * Media upload utilities for Admin Landing Page editor.
- * Handles image compression/resize and file-to-dataURL conversion.
- * All media is stored as base64 dataURL in Zustand store (localStorage).
+ * Handles client-side image compression plus server-backed landing video uploads.
  */
+
+import { api } from './api';
 
 // ============ IMAGE COMPRESSION ============
 
@@ -133,49 +134,33 @@ export function compressBannerImage(file: File): Promise<string> {
 
 // ============ VIDEO HANDLING ============
 
-/**
- * Convert a video file to a blob URL for local playback.
- * Note: Video files are NOT stored as base64 (too large for localStorage).
- * Instead, we create an Object URL. For persistent storage,
- * admin should use an external URL or the video will reset on page reload.
- *
- * Max video size: 50MB
- */
-export function createVideoObjectUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('video/')) {
-      reject(new Error('File không phải là video'));
-      return;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      reject(new Error('Video quá lớn (tối đa 50MB)'));
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    resolve(url);
-  });
+export const MAX_LANDING_VIDEO_SIZE_MB = 80;
+const MAX_LANDING_VIDEO_SIZE_BYTES = MAX_LANDING_VIDEO_SIZE_MB * 1024 * 1024;
+
+export interface UploadedLandingVideo {
+  url: string;
+  originalName: string;
+  size: number;
+  mimeType: string;
 }
 
-/**
- * Convert a small video to base64 dataURL for localStorage storage.
- * WARNING: Only use for very small videos (< 5MB).
- * Larger videos will exceed localStorage quota.
- */
-export function videoToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('video/')) {
-      reject(new Error('File không phải là video'));
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      reject(new Error('Video quá lớn để lưu trực tiếp (tối đa 5MB). Hãy sử dụng URL bên ngoài cho video lớn hơn.'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Không thể đọc file video'));
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
+export function validateLandingVideoFile(file: File): void {
+  if (file.type !== 'video/mp4') {
+    throw new Error('Chỉ hỗ trợ video MP4');
+  }
+
+  if (file.size > MAX_LANDING_VIDEO_SIZE_BYTES) {
+    throw new Error(`Video vượt quá ${MAX_LANDING_VIDEO_SIZE_MB}MB`);
+  }
+}
+
+export async function uploadLandingVideo(file: File): Promise<UploadedLandingVideo> {
+  validateLandingVideoFile(file);
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return api.post<UploadedLandingVideo>('/landing/media', formData);
 }
 
 // ============ FILE INPUT HELPER ============

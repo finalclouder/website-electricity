@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { FileText, Trash2, Download, Clock, Search, Filter, Plus, Eye, CheckCircle2, Edit3, AlertCircle, X, MapPin, Users, Wrench, Calendar, Zap, Copy } from 'lucide-react';
+import { FileDown, FileText, Trash2, Download, Clock, Search, Plus, Eye, CheckCircle2, Edit3, Copy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
 import { PATCTCData } from '../types';
+import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
+import { formatDateTime } from '../utils/date';
+import { getAuthHeaders } from '../utils/api';
 
 const STATUS_MAP = {
   draft: { label: 'Bản nháp', color: 'zinc', icon: Edit3 },
@@ -11,16 +14,9 @@ const STATUS_MAP = {
   approved: { label: 'Đã duyệt', color: 'green', icon: CheckCircle2 }
 } as const;
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-}
-
 export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void; onTabChange?: (tab: string) => void }> = ({ onViewProfile, onTabChange }) => {
   const { user } = useAuthStore();
-  const { savedDocuments, saveDocument, deleteDocument, updateDocument } = useSocialStore();
+  const { savedDocuments, saveDocument, deleteDocument, updateDocument, trackDocumentDownload } = useSocialStore();
   const { data } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -55,8 +51,11 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     });
   };
 
-  const handleLoad = (doc: SavedDocument) => {
+  const handleLoad = async (doc: SavedDocument) => {
     try {
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
       const parsed = JSON.parse(doc.dataSnapshot);
       useStore.getState().setData(parsed);
       onTabChange?.('patctc');
@@ -71,7 +70,6 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     try {
       const parsed = JSON.parse(doc.dataSnapshot);
       useStore.getState().setData(parsed);
-      // Save as own draft immediately
       const title = `[Sao chép] ${doc.title}`;
       const description = doc.description;
       saveDocument({
@@ -86,6 +84,66 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
       onTabChange?.('patctc');
     } catch {
       alert('Không thể sao chép tài liệu');
+    }
+  };
+
+  const exportPdf = async (doc: SavedDocument) => {
+    try {
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
+
+      const parsed = JSON.parse(doc.dataSnapshot);
+      const res = await fetch('/api/export/pdf', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(parsed),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(errorData.error || 'Server error');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PATCTC_${parsed.soVb || 'export'}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải file PDF');
+    }
+  };
+
+  const exportWord = async (doc: SavedDocument) => {
+    try {
+      if (user && doc.authorId !== user.id) {
+        await trackDocumentDownload(doc.id);
+      }
+
+      const parsed = JSON.parse(doc.dataSnapshot);
+      const res = await fetch('/api/export/docx', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(parsed),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(errorData.error || 'Server error');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PATCTC_${parsed.soVb || 'export'}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải file Word');
     }
   };
 
@@ -151,9 +209,15 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
           return (
             <div key={doc.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all p-4 group">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <FileText size={24} className="text-blue-600" />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => onViewProfile?.(doc.authorId)}
+                  className="shrink-0 transition hover:opacity-80"
+                >
+                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <FileText size={24} className="text-blue-600" />
+                  </div>
+                </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-sm font-bold text-zinc-900 truncate">{doc.title}</h3>
@@ -163,9 +227,9 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 mb-2 truncate">{doc.description}</p>
-                  <div className="flex items-center gap-3 text-[11px] text-zinc-400">
-                    <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(doc.updatedAt)}</span>
-                    <span>•</span>
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400">
+                    <span className="flex items-center gap-1"><Clock size={11} /> {formatDateTime(doc.updatedAt)}</span>
+                    <span className="flex items-center gap-1"><Download size={11} /> {doc.downloadCount ?? 0} lượt tải</span>
                     <button
                       onClick={() => onViewProfile?.(doc.authorId)}
                       className="hover:text-blue-600 hover:underline transition-colors"
@@ -188,6 +252,20 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                     title="Xem trước"
                   >
                     <Eye size={16} />
+                  </button>
+                  <button
+                    onClick={() => exportPdf(doc)}
+                    className="p-2 hover:bg-sky-50 rounded-lg text-sky-600 transition-colors"
+                    title="Tải PDF"
+                  >
+                    <FileDown size={16} />
+                  </button>
+                  <button
+                    onClick={() => exportWord(doc)}
+                    className="p-2 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-colors"
+                    title="Tải Word"
+                  >
+                    <FileText size={16} />
                   </button>
                   <button
                     onClick={() => handleLoad(doc)}
@@ -242,113 +320,16 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
         )}
       </div>
 
-      {/* ========= Document Preview Modal ========= */}
-      {previewDoc && previewData && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-3 sm:p-6" onClick={() => { setPreviewDoc(null); setPreviewData(null); }}>
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 bg-gradient-to-r from-blue-50 to-cyan-50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                  <FileText size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-zinc-900">{previewDoc.title}</h2>
-                  <p className="text-xs text-zinc-400">{previewDoc.authorName} · {new Date(previewDoc.updatedAt).toLocaleDateString('vi-VN')}</p>
-                </div>
-              </div>
-              <button onClick={() => { setPreviewDoc(null); setPreviewData(null); }} className="p-2 hover:bg-zinc-100 rounded-xl transition-colors">
-                <X size={18} className="text-zinc-400" />
-              </button>
-            </div>
-
-            {/* Modal body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-                <div className="bg-blue-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Zap size={14} className="text-blue-500" />
-                    <span className="text-xs font-bold text-blue-700 uppercase">Thông tin PA</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between"><span className="text-zinc-500">Số VB:</span><span className="font-semibold text-zinc-800">{previewData.soVb}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-500">Ngày lập:</span><span className="font-semibold text-zinc-800">{previewData.ngayLap}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-500">Đơn vị TC:</span><span className="font-semibold text-zinc-800 text-right ml-2">{previewData.donViThiCong}</span></div>
-                  </div>
-                </div>
-                <div className="bg-amber-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={14} className="text-amber-500" />
-                    <span className="text-xs font-bold text-amber-700 uppercase">Vị trí</span>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between"><span className="text-zinc-500">ĐZ:</span><span className="font-semibold text-zinc-800">{previewData.dz}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-500">Cột:</span><span className="font-semibold text-zinc-800">{previewData.cot}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-500">Địa bàn:</span><span className="font-semibold text-zinc-800 text-right ml-2 text-xs">{previewData.diaBan}</span></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Wrench size={14} className="text-green-500" />
-                  <span className="text-xs font-bold text-green-700 uppercase">Hạng mục</span>
-                </div>
-                {previewData.jobItems.map((job, i) => (
-                  <div key={i} className="bg-green-50 rounded-lg px-3 py-2 text-sm text-zinc-700 flex items-start gap-2 mb-1.5">
-                    <span className="w-5 h-5 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold text-green-700 flex-shrink-0 mt-0.5">{i + 1}</span>
-                    <span>{job}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-purple-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-1"><Calendar size={14} className="text-purple-500" /><span className="text-xs font-bold text-purple-700">Thời gian</span></div>
-                  <p className="text-sm text-zinc-700">{previewData.tg_gio}h ngày {previewData.tg_soNgay}/{previewData.tg_thang}/{previewData.tg_nam}</p>
-                </div>
-                <div className="bg-rose-50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 mb-1"><Users size={14} className="text-rose-500" /><span className="text-xs font-bold text-rose-700">Nhân sự</span></div>
-                  <p className="text-sm text-zinc-700">{previewData.personnel?.length || 0} người · {previewData.nguoiLap}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal footer */}
-            <div className="px-5 py-4 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50">
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                previewDoc.status === 'approved' ? 'bg-green-100 text-green-700'
-                : previewDoc.status === 'completed' ? 'bg-blue-100 text-blue-700'
-                : 'bg-zinc-200 text-zinc-500'
-              }`}>
-                {previewDoc.status === 'approved' ? 'Đã duyệt' : previewDoc.status === 'completed' ? 'Hoàn thành' : 'Bản nháp'}
-              </span>
-              <div className="flex items-center gap-2">
-                <button onClick={() => { setPreviewDoc(null); setPreviewData(null); }} className="px-4 py-2.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-600 text-sm font-medium rounded-xl transition-all">
-                  Đóng
-                </button>
-                {previewDoc.authorId !== user?.id && (
-                  <button
-                    onClick={() => { handleClone(previewDoc); setPreviewDoc(null); setPreviewData(null); }}
-                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
-                  >
-                    <Copy size={14} /> Sao chép
-                  </button>
-                )}
-                <button
-                  onClick={() => { handleLoad(previewDoc); setPreviewDoc(null); setPreviewData(null); }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-                >
-                  <Download size={14} /> Tải về & Mở
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DocumentPreviewModal
+        document={previewDoc}
+        data={previewData}
+        onClose={() => { setPreviewDoc(null); setPreviewData(null); }}
+        onOpen={handleLoad}
+        openLabel="Tải về & Mở"
+        onExportPdf={exportPdf}
+        onExportWord={exportWord}
+        onClone={previewDoc?.authorId !== user?.id ? handleClone : undefined}
+      />
     </div>
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Heart, MessageCircle, Share2, Send, MoreHorizontal, Trash2, Shield, AlertTriangle, Megaphone, Lightbulb, Clock, Image, Video, X, Play, Reply, Pencil, Check } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SocialPost } from '../store/useSocialStore';
+import { parseAppDate, timeAgo } from '../utils/date';
 
 const CATEGORIES = [
   { value: 'general', label: 'Chung', icon: Lightbulb, color: 'blue' },
@@ -9,18 +10,6 @@ const CATEGORIES = [
   { value: 'safety', label: 'An toàn', icon: AlertTriangle, color: 'amber' },
   { value: 'announcement', label: 'Thông báo', icon: Megaphone, color: 'purple' },
 ] as const;
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Vừa xong';
-  if (mins < 60) return `${mins} phút trước`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} giờ trước`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days} ngày trước`;
-  return new Date(dateStr).toLocaleDateString('vi-VN');
-}
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -382,14 +371,26 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
               <div key={comment.id}>
                 {/* Comment */}
                 <div className="flex gap-2.5 group">
-                  <div className="w-8 h-8 bg-gradient-to-br from-zinc-400 to-zinc-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                    {getInitials(comment.authorName)}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onViewProfile?.(comment.authorId)}
+                    className="flex items-center gap-3 text-left transition hover:opacity-80 flex-shrink-0"
+                  >
+                    <div className="w-8 h-8 bg-gradient-to-br from-zinc-400 to-zinc-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                      {getInitials(comment.authorName)}
+                    </div>
+                  </button>
                   <div className="flex-1">
                     {editingComment === comment.id ? (
                       /* Edit mode */
                       <div className="bg-white rounded-xl px-3 py-2 border-2 border-blue-400">
-                        <span className="text-xs font-semibold text-zinc-900">{comment.authorName}</span>
+                        <button
+                          type="button"
+                          onClick={() => onViewProfile?.(comment.authorId)}
+                          className="flex items-center gap-3 text-left transition hover:opacity-80"
+                        >
+                          <span className="text-xs font-semibold text-zinc-900">{comment.authorName}</span>
+                        </button>
                         <input
                           value={editText}
                           onChange={e => setEditText(e.target.value)}
@@ -412,7 +413,13 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
                     ) : (
                       /* Display mode */
                       <div className="bg-white rounded-xl px-3 py-2 border border-zinc-100">
-                        <span className="text-xs font-semibold text-zinc-900">{comment.authorName}</span>
+                        <button
+                          type="button"
+                          onClick={() => onViewProfile?.(comment.authorId)}
+                          className="flex items-center gap-3 text-left transition hover:opacity-80"
+                        >
+                          <span className="text-xs font-semibold text-zinc-900">{comment.authorName}</span>
+                        </button>
                         <p className="text-sm text-zinc-600">{comment.content}</p>
                         {comment.editedAt && <span className="text-[10px] text-zinc-300 italic">đã chỉnh sửa</span>}
                       </div>
@@ -454,13 +461,25 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
                 {/* Replies */}
                 {post.comments.filter(r => r.parentId === comment.id).map(reply => (
                   <div key={reply.id} className="flex gap-2.5 group ml-10 mt-2">
-                    <div className="w-7 h-7 bg-gradient-to-br from-zinc-400 to-zinc-500 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                      {getInitials(reply.authorName)}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onViewProfile?.(reply.authorId)}
+                      className="flex items-center gap-2 text-left transition hover:opacity-80 flex-shrink-0"
+                    >
+                      <div className="w-7 h-7 bg-gradient-to-br from-zinc-400 to-zinc-500 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                        {getInitials(reply.authorName)}
+                      </div>
+                    </button>
                     <div className="flex-1">
                       {editingComment === reply.id ? (
                         <div className="bg-white rounded-xl px-3 py-2 border-2 border-blue-400">
-                          <span className="text-xs font-semibold text-zinc-900">{reply.authorName}</span>
+                          <button
+                            type="button"
+                            onClick={() => onViewProfile?.(reply.authorId)}
+                            className="flex items-center gap-2 text-left transition hover:opacity-80"
+                          >
+                            <span className="text-xs font-semibold text-zinc-900">{reply.authorName}</span>
+                          </button>
                           <input
                             value={editText}
                             onChange={e => setEditText(e.target.value)}
@@ -482,7 +501,13 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
                         </div>
                       ) : (
                         <div className="bg-white rounded-xl px-2.5 py-1.5 border border-zinc-100">
-                          <span className="text-[11px] font-semibold text-zinc-900">{reply.authorName}</span>
+                          <button
+                            type="button"
+                            onClick={() => onViewProfile?.(reply.authorId)}
+                            className="flex items-center gap-2 text-left transition hover:opacity-80"
+                          >
+                            <span className="text-[11px] font-semibold text-zinc-900">{reply.authorName}</span>
+                          </button>
                           <p className="text-[13px] text-zinc-600">{reply.content}</p>
                           {reply.editedAt && <span className="text-[10px] text-zinc-300 italic">đã chỉnh sửa</span>}
                         </div>
@@ -626,8 +651,11 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
 
   // Sort posts
   const sortedPosts = [...filtered].sort((a, b) => {
-    if (sortBy === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    if (sortBy === 'oldest') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    const timeA = parseAppDate(a.createdAt)?.getTime() ?? 0;
+    const timeB = parseAppDate(b.createdAt)?.getTime() ?? 0;
+
+    if (sortBy === 'newest') return timeB - timeA;
+    if (sortBy === 'oldest') return timeA - timeB;
     // popular: by likes + comments
     const scoreA = a.likes.length + a.comments.length + a.shares;
     const scoreB = b.likes.length + b.comments.length + b.shares;

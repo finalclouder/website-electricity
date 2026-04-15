@@ -37,23 +37,27 @@ export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister
       if (!email.trim()) { setError('Vui lòng nhập email'); return; }
       if (password.length < 6) { setError('Mật khẩu tối thiểu 6 ký tự'); return; }
 
-      const ok = await register(name, email, password);
-      if (!ok) setError('Email đã tồn tại');
-      else setSuccess('Đăng ký thành công!');
+      const res = await register(name, email, password);
+      if (!res.ok) {
+        setError(res.error || 'Email đã tồn tại');
+      } else {
+        if (res.error) {
+          // This means they are pending approval (we smuggled message via error prop)
+          alert(res.error);
+          setIsRegister(false); // Switch to login
+        } else {
+          setSuccess('Đăng ký thành công!');
+        }
+      }
     } else {
       if (!email.trim() || !password.trim()) { setError('Vui lòng nhập đầy đủ thông tin'); return; }
 
-      const ok = await login(email, password);
-      if (!ok) setError('Email hoặc mật khẩu không đúng');
+      const res = await login(email, password);
+      if (!res.ok) setError(res.error || 'Email hoặc mật khẩu không đúng');
     }
   };
 
-  // Quick fill demo account
-  const fillDemo = (type: 'admin' | 'user') => {
-    setEmail(type === 'admin' ? 'admin@patctc.vn' : 'user@patctc.vn');
-    setPassword(type === 'admin' ? 'admin123' : 'user123');
-    setError('');
-  };
+  
 
   const features = [
     { icon: FileText, text: 'Lập phương án thi công' },
@@ -85,13 +89,7 @@ export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister
         {/* Top - Logo */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
-              <Zap size={26} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-white tracking-tight">{config.logoTitle}</h1>
-              <p className="text-[10px] text-blue-300 uppercase tracking-[0.2em]">{config.logoSubtitle}</p>
-            </div>
+            <img src="/logo-square.png" alt="Logo" className="w-16 h-16 object-contain rounded-full border border-white/30 shadow-lg bg-white p-1.5" />
           </div>
         </div>
 
@@ -140,10 +138,7 @@ export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister
               <span className="text-sm font-medium">Trang chủ</span>
             </button>
           ) : <div />}
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-white" />
-            <span className="text-white font-bold text-sm">{config.logoTitle}</span>
-          </div>
+          <img src="/logo-square.png" alt="Logo" className="w-8 h-8 object-contain rounded-full bg-white shadow-sm p-1" />
         </div>
 
         {/* Desktop back button */}
@@ -165,11 +160,7 @@ export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister
 
             {/* Header */}
             <div className="mb-8">
-              <div className="lg:hidden flex items-center justify-center mb-6">
-                <div className="w-14 h-14 bg-gradient-to-br from-[#164396] to-[#1e56b0] rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                  <Zap size={28} className="text-white" />
-                </div>
-              </div>
+              
               <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 text-center lg:text-left">
                 {isRegister ? 'Tạo tài khoản' : 'Chào mừng trở lại'}
               </h2>
@@ -293,46 +284,7 @@ export const LoginPage: React.FC<{ onBackToLanding?: () => void; initialRegister
               {isRegister ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký miễn phí'}
             </button>
 
-            {/* Demo accounts */}
-            {!isRegister && (
-              <div className="mt-6 bg-white rounded-xl border border-zinc-200 overflow-hidden">
-                <div className="px-4 py-2.5 bg-zinc-50 border-b border-zinc-100">
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Tài khoản demo</p>
-                </div>
-                <div className="divide-y divide-zinc-100">
-                  <button
-                    onClick={() => fillDemo('admin')}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-50/50 transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Shield size={14} className="text-blue-600" />
-                      </div>
-                      <div className="text-left">
-                        <div className="text-xs font-bold text-zinc-700">Admin</div>
-                        <div className="text-[11px] text-zinc-400 font-mono">admin@patctc.vn</div>
-                      </div>
-                    </div>
-                    <ChevronRight size={14} className="text-zinc-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
-                  </button>
-                  <button
-                    onClick={() => fillDemo('user')}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-50/50 transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-zinc-100 rounded-lg flex items-center justify-center">
-                        <User size={14} className="text-zinc-500" />
-                      </div>
-                      <div className="text-left">
-                        <div className="text-xs font-bold text-zinc-700">User</div>
-                        <div className="text-[11px] text-zinc-400 font-mono">user@patctc.vn</div>
-                      </div>
-                    </div>
-                    <ChevronRight size={14} className="text-zinc-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
-                  </button>
-                </div>
-              </div>
-            )}
+            
           </div>
         </div>
 
