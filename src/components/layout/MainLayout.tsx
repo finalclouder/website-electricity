@@ -10,7 +10,8 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-function getInitials(name: string): string {
+function getInitials(name?: string): string {
+  if (!name) return '?';
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
 }
 
@@ -39,7 +40,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
     { id: 'documents', label: 'Tài liệu đã lưu', icon: FolderOpen },
   ];
 
-  const recentNotifications = notifications.slice(0, 8);
+  const safeNotifications = Array.isArray(notifications) ? notifications : [];
+  const safeUnreadNotificationCount = typeof unreadNotificationCount === 'number' ? unreadNotificationCount : 0;
+  const recentNotifications = safeNotifications.slice(0, 8);
 
   return (
     <div className="h-screen flex flex-col bg-zinc-100 overflow-hidden">
@@ -84,9 +87,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
               className="relative flex items-center justify-center w-10 h-10 hover:bg-zinc-50 rounded-xl transition-all"
             >
               <Bell size={18} className={showNotificationMenu ? 'text-blue-600' : 'text-zinc-500'} />
-              {unreadNotificationCount > 0 && (
+              {safeUnreadNotificationCount > 0 && (
                 <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm">
-                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                  {safeUnreadNotificationCount > 99 ? '99+' : safeUnreadNotificationCount}
                 </span>
               )}
             </button>
@@ -98,11 +101,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
                   <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-800">Thông báo</div>
-                      <div className="text-xs text-zinc-400">{unreadNotificationCount} chưa đọc</div>
+                      <div className="text-xs text-zinc-400">{safeUnreadNotificationCount} chưa đọc</div>
                     </div>
                     <button
                       onClick={() => markAllNotificationsRead()}
-                      disabled={notifications.length === 0 || unreadNotificationCount === 0}
+                      disabled={safeNotifications.length === 0 || safeUnreadNotificationCount === 0}
                       className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-zinc-300"
                     >
                       Đánh dấu tất cả

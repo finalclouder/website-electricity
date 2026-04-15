@@ -8,7 +8,8 @@ import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { parseAppDate, timeAgo } from '../utils/date';
 import { api, getAuthHeaders } from '../utils/api';
 
-function getInitials(name: string): string {
+function getInitials(name?: string): string {
+  if (!name) return '?';
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
 }
 
@@ -56,20 +57,30 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     return allUsers.find(candidate => candidate.id === viewingUserId) ?? null;
   }, [allUsers, isOwner, user, viewingUserId]);
 
+  const safePosts = Array.isArray(posts) ? posts : [];
+  const safeSavedDocuments = Array.isArray(savedDocuments) ? savedDocuments : [];
+  const safeFriends = Array.isArray(friends) ? friends : [];
+  const safeIncomingFriendRequests = Array.isArray(incomingFriendRequests) ? incomingFriendRequests : [];
+  const safeOutgoingFriendRequests = Array.isArray(outgoingFriendRequests) ? outgoingFriendRequests : [];
+  const safeRelationshipsByUserId = relationshipsByUserId && typeof relationshipsByUserId === 'object' ? relationshipsByUserId : {};
+  const safeFollowersByUserId = followersByUserId && typeof followersByUserId === 'object' ? followersByUserId : {};
+  const safeFollowingByUserId = followingByUserId && typeof followingByUserId === 'object' ? followingByUserId : {};
+  const safeDocumentDownloadsByDocumentId = documentDownloadsByDocumentId && typeof documentDownloadsByDocumentId === 'object' ? documentDownloadsByDocumentId : {};
+
   const profileUser = viewedUser ?? (isOwner ? user : null);
-  const relationship = viewingUserId ? relationshipsByUserId[viewingUserId] : undefined;
-  const followerCount = profileUser ? (followersByUserId[profileUser.id]?.length ?? relationship?.followerCount ?? 0) : 0;
-  const followingCount = profileUser ? (followingByUserId[profileUser.id]?.length ?? relationship?.followingCount ?? 0) : 0;
-  const isFriend = Boolean(profileUser && friends.some(friend => friend.userId === profileUser.id));
-  const incomingRequest = profileUser ? incomingFriendRequests.find(request => request.senderId === profileUser.id) : undefined;
-  const outgoingRequest = profileUser ? outgoingFriendRequests.find(request => request.receiverId === profileUser.id) : undefined;
+  const relationship = viewingUserId ? safeRelationshipsByUserId[viewingUserId] : undefined;
+  const followerCount = profileUser ? (safeFollowersByUserId[profileUser.id]?.length ?? relationship?.followerCount ?? 0) : 0;
+  const followingCount = profileUser ? (safeFollowingByUserId[profileUser.id]?.length ?? relationship?.followingCount ?? 0) : 0;
+  const isFriend = Boolean(profileUser && safeFriends.some(friend => friend.userId === profileUser.id));
+  const incomingRequest = profileUser ? safeIncomingFriendRequests.find(request => request.senderId === profileUser.id) : undefined;
+  const outgoingRequest = profileUser ? safeOutgoingFriendRequests.find(request => request.receiverId === profileUser.id) : undefined;
 
   const userDocs = useMemo(() => {
     if (!profileUser) return [];
     return isViewingOther
-      ? viewedUserDocuments
-      : savedDocuments.filter(doc => doc.authorId === profileUser.id);
-  }, [isViewingOther, profileUser, viewedUserDocuments, savedDocuments]);
+      ? (Array.isArray(viewedUserDocuments) ? viewedUserDocuments : [])
+      : safeSavedDocuments.filter(doc => doc.authorId === profileUser.id);
+  }, [isViewingOther, profileUser, viewedUserDocuments, safeSavedDocuments]);
 
   const [editName, setEditName] = useState(user?.name || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
@@ -85,6 +96,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const [showOldPw, setShowOldPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
   const [pwNotification, setPwNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [profileNotification, setProfileNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Document preview state
   const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
@@ -105,7 +117,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       return;
     }
 
-    const hasCachedUser = allUsers.some(candidate => candidate.id === viewingUserId);
+    const hasCachedUser = (Array.isArray(allUsers) ? allUsers : []).some(candidate => candidate.id === viewingUserId);
     if (hasCachedUser) {
       setProfileFetchMissed(false);
       setIsProfileLoading(false);
@@ -225,42 +237,73 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
 
   const handleFollowToggle = async () => {
     if (!viewingUserId || !profileUser) return;
-    if (relationship?.isFollowing) {
-      await unfollowUser(viewingUserId);
-    } else {
-      await followUser(viewingUserId);
+
+    try {
+      if (relationship?.isFollowing) {
+        await unfollowUser(viewingUserId);
+      } else {
+        await followUser(viewingUserId);
+      }
+    } catch (error) {
+      console.error('Follow toggle mutation error:', error);
+      return;
     }
-    await Promise.all([
-      fetchRelationship(viewingUserId),
-      fetchFollowers(viewingUserId),
-      user ? fetchFollowing(user.id) : Promise.resolve(),
-    ]);
+
+    try {
+      await Promise.all([
+        fetchRelationship(viewingUserId),
+        fetchFollowers(viewingUserId),
+        user ? fetchFollowing(user.id) : Promise.resolve(),
+      ]);
+    } catch (error) {
+      console.error('Follow toggle refetch error:', error);
+    }
   };
 
   const handleFriendAction = async () => {
     if (!viewingUserId || !profileUser) return;
 
-    if (incomingRequest) {
-      await acceptFriendRequest(incomingRequest.id);
-    } else if (outgoingRequest) {
-      await cancelFriendRequest(outgoingRequest.id);
-    } else if (!isFriend) {
-      await sendFriendRequest(viewingUserId);
+    try {
+      if (incomingRequest) {
+        await acceptFriendRequest(incomingRequest.id);
+      } else if (outgoingRequest) {
+        await cancelFriendRequest(outgoingRequest.id);
+      } else if (!isFriend) {
+        await sendFriendRequest(viewingUserId);
+      }
+    } catch (error) {
+      console.error('Friend action mutation error:', error);
+      return;
     }
 
-    await Promise.all([
-      fetchRelationship(viewingUserId),
-      fetchFriends(),
-    ]);
+    try {
+      await Promise.all([
+        fetchRelationship(viewingUserId),
+        fetchFriends(),
+      ]);
+    } catch (error) {
+      console.error('Friend action refetch error:', error);
+    }
   };
 
   const handleRejectIncomingRequest = async () => {
     if (!incomingRequest || !viewingUserId) return;
-    await rejectFriendRequest(incomingRequest.id);
-    await Promise.all([
-      fetchRelationship(viewingUserId),
-      fetchFriends(),
-    ]);
+
+    try {
+      await rejectFriendRequest(incomingRequest.id);
+    } catch (error) {
+      console.error('Reject friend request mutation error:', error);
+      return;
+    }
+
+    try {
+      await Promise.all([
+        fetchRelationship(viewingUserId),
+        fetchFriends(),
+      ]);
+    } catch (error) {
+      console.error('Reject friend request refetch error:', error);
+    }
   };
 
   if (!user) return null;
@@ -281,15 +324,21 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   if (!profileUser) return null;
 
   // User stats - use profileUser's ID
-  const userPosts = posts.filter(p => p.authorId === profileUser.id);
-  const userComments = posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).length, 0);
-  const totalLikesReceived = userPosts.reduce((acc, p) => acc + p.likes.length, 0)
-    + posts.reduce((acc, p) => acc + p.comments.filter(c => c.authorId === profileUser.id).reduce((a, c) => a + c.likes.length, 0), 0);
+  const userPosts = safePosts.filter(p => p.authorId === profileUser.id);
+  const userComments = safePosts.reduce((acc, p) => acc + (Array.isArray(p.comments) ? p.comments : []).filter(c => c.authorId === profileUser.id).length, 0);
+  const totalLikesReceived = userPosts.reduce((acc, p) => acc + (Array.isArray(p.likes) ? p.likes.length : 0), 0)
+    + safePosts.reduce((acc, p) => acc + (Array.isArray(p.comments) ? p.comments : []).filter(c => c.authorId === profileUser.id).reduce((a, c) => a + (Array.isArray(c.likes) ? c.likes.length : 0), 0), 0);
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!editName.trim()) return;
-    updateProfile({ name: editName.trim(), email: editEmail.trim(), bio: editBio.trim() });
-    setIsEditing(false);
+    const result = await updateProfile({ name: editName.trim(), email: editEmail.trim(), bio: editBio.trim() });
+    if (result.ok) {
+      setProfileNotification({ text: 'Đã cập nhật hồ sơ thành công!', type: 'success' });
+      setIsEditing(false);
+    } else {
+      setProfileNotification({ text: result.error || 'Lỗi cập nhật hồ sơ', type: 'error' });
+    }
+    setTimeout(() => setProfileNotification(null), 3000);
   };
 
   const handleCancelEdit = () => {
@@ -459,7 +508,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   ];
 
   const currentDownloadHistory = downloadHistoryDocId
-    ? (documentDownloadsByDocumentId[downloadHistoryDocId] ?? [])
+    ? (Array.isArray(safeDocumentDownloadsByDocumentId[downloadHistoryDocId]) ? safeDocumentDownloadsByDocumentId[downloadHistoryDocId] : [])
     : [];
 
   const hasAvatar = profileUser.avatar && profileUser.avatar.length > 0;
@@ -539,7 +588,9 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                   </span>
                 )}
               </div>
-              <p className="text-sm text-zinc-500">{profileUser.email}</p>
+              {profileUser.email && (
+                <p className="text-sm text-zinc-500">{profileUser.email}</p>
+              )}
               {profileUser.bio && (
                 <p className="text-sm text-zinc-600 mt-1">{profileUser.bio}</p>
               )}
@@ -774,8 +825,19 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       )}
 
       {/* Password notification */}
-      {pwNotification && (
+      {profileNotification && (
         <div className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border flex items-center gap-2 text-sm font-medium animate-in slide-in-from-right ${
+          profileNotification.type === 'success'
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
+          {profileNotification.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          {profileNotification.text}
+        </div>
+      )}
+
+      {pwNotification && (
+        <div className={`fixed top-36 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border flex items-center gap-2 text-sm font-medium animate-in slide-in-from-right ${
           pwNotification.type === 'success'
             ? 'bg-green-50 border-green-200 text-green-700'
             : 'bg-red-50 border-red-200 text-red-700'
@@ -989,7 +1051,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                     });
                   });
 
-                  posts.forEach(p => {
+                  safePosts.forEach(p => {
                     p.comments.filter(c => c.authorId === activityUserId).forEach(c => {
                       activities.push({
                         type: 'comment',

@@ -112,10 +112,20 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.put('/profile', authMiddleware, async (req, res) => {
   try {
     const { userId } = (req as any).user;
-    const { name, bio, avatar } = req.body;
+    const { name, email, bio, avatar } = req.body;
 
     if (name !== undefined && name.length > 100) {
       return res.status(400).json({ error: 'Họ tên quá dài (tối đa 100 ký tự)' });
+    }
+    if (email !== undefined) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!normalizedEmail) {
+        return res.status(400).json({ error: 'Email không được để trống' });
+      }
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({ error: 'Email không đúng định dạng' });
+      }
     }
     if (bio !== undefined && bio.length > 500) {
       return res.status(400).json({ error: 'Tiểu sử quá dài (tối đa 500 ký tự)' });
@@ -124,14 +134,28 @@ router.put('/profile', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Ảnh đại diện quá lớn (tối đa ~375KB)' });
     }
 
-    await userDb.updateProfile(userId, { name, bio, avatar });
+    try {
+      await userDb.updateProfile(userId, {
+        name,
+        email: email !== undefined ? email.trim().toLowerCase() : undefined,
+        bio,
+        avatar,
+      });
+    } catch (error: any) {
+      const message = error?.message || '';
+      if (error?.code === '23505' || message.includes('duplicate key') || message.includes('users_email_key')) {
+        return res.status(409).json({ error: 'Email này đã được sử dụng bởi tài khoản khác' });
+      }
+      throw error;
+    }
+
     const updated = await userDb.findById(userId);
 
     if (!updated) {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     }
 
-    res.json({ id: updated.id, name: updated.name, email: updated.email, avatar: updated.avatar, bio: updated.bio, role: updated.role, createdAt: updated.created_at });
+    res.json({ id: updated.id, name: updated.name, email: updated.email, avatar: updated.avatar, bio: updated.bio, role: updated.role, status: updated.status, createdAt: updated.created_at });
   } catch (error: any) {
     console.error('Update profile error:', error.message);
     res.status(500).json({ error: 'Lỗi cập nhật hồ sơ' });
@@ -148,7 +172,7 @@ router.put('/password', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Vui lòng nhập mật khẩu cũ và mật khẩu mới' });
     }
 
-    const user = await userDb.findByEmailWithPassword((req as any).user.email);
+    const user = await userDb.findByIdWithPassword(userId);
     if (!user) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
 
     if (!bcrypt.compareSync(oldPassword, user.password)) {
@@ -189,9 +213,21 @@ router.get('/users', authMiddleware, adminOnly, async (req, res) => {
 // GET /api/auth/users/:id - Get a single user profile for profile viewing
 router.get('/users/:id', authMiddleware, async (req, res) => {
   try {
+    const requester = (req as any).user;
     const target = await userDb.findById(req.params.id);
     if (!target) {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
+    }
+
+    const canViewPrivateFields = requester.userId === target.id || requester.role === 'admin';
+    if (!canViewPrivateFields) {
+      return res.json({
+        id: target.id,
+        name: target.name,
+        avatar: target.avatar,
+        bio: target.bio,
+        createdAt: target.created_at,
+      });
     }
 
     res.json({

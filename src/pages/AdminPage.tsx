@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2 } from 'lucide-react';
-import { useAuthStore, User } from '../store/useAuthStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
 import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, formatFileSize, uploadLandingVideo, MAX_LANDING_VIDEO_SIZE_MB } from '../utils/mediaUpload';
@@ -651,7 +651,7 @@ export const AdminPage: React.FC = () => {
   const filteredUsers = allUsers.filter(u => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    return u.name.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
   });
 
   const showNotif = (text: string, type: 'success' | 'error' = 'success') => {
@@ -659,28 +659,50 @@ export const AdminPage: React.FC = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    deleteUser(userId);
-    setShowConfirmDelete(null);
-    setRefreshKey(k => k + 1);
-    showNotif('Đã xóa tài khoản');
+  const handleDeleteUser = async (userId: string) => {
+    const result = await deleteUser(userId);
+    if (result.ok) {
+      setShowConfirmDelete(null);
+      setRefreshKey(k => k + 1);
+      showNotif('Đã xóa tài khoản');
+      return;
+    }
+    showNotif(result.error || 'Không thể xóa tài khoản', 'error');
   };
 
-  const handleToggleRole = (userId: string) => {
-    toggleUserRole(userId);
-    setRefreshKey(k => k + 1);
-    showNotif('Đã thay đổi quyền');
+  const handleToggleRole = async (userId: string) => {
+    const result = await toggleUserRole(userId);
+    if (result.ok) {
+      setRefreshKey(k => k + 1);
+      showNotif('Đã thay đổi quyền');
+      return;
+    }
+    showNotif(result.error || 'Không thể thay đổi quyền', 'error');
   };
 
-  const handleResetPassword = (userId: string) => {
+  const handleResetPassword = async (userId: string) => {
     if (!newPassword.trim() || newPassword.length < 6) {
       showNotif('Mật khẩu phải ít nhất 6 ký tự', 'error');
       return;
     }
-    resetUserPassword(userId, newPassword.trim());
-    setResetPasswordUserId(null);
-    setNewPassword('');
-    showNotif('Đã đặt lại mật khẩu');
+    const result = await resetUserPassword(userId, newPassword.trim());
+    if (result.ok) {
+      setResetPasswordUserId(null);
+      setNewPassword('');
+      showNotif('Đã đặt lại mật khẩu');
+      return;
+    }
+    showNotif(result.error || 'Không thể đặt lại mật khẩu', 'error');
+  };
+
+  const handleUpdateUserStatus = async (userId: string, status: 'approved' | 'rejected') => {
+    const result = await useAuthStore.getState().updateUserStatus(userId, status);
+    if (result.ok) {
+      setRefreshKey(k => k + 1);
+      showNotif(status === 'approved' ? 'Đã duyệt tài khoản' : 'Đã từ chối tài khoản');
+      return;
+    }
+    showNotif(result.error || (status === 'approved' ? 'Không thể duyệt tài khoản' : 'Không thể từ chối tài khoản'), 'error');
   };
 
   // System stats
@@ -829,7 +851,7 @@ export const AdminPage: React.FC = () => {
                             {u.name}
                             {isCurrentUser && <span className="text-[10px] text-blue-500 font-normal">(bạn)</span>}
                           </div>
-                          <div className="text-xs text-zinc-400 truncate">{u.email}</div>
+                          <div className="text-xs text-zinc-400 truncate">{u.email || '—'}</div>
                         </div>
                       </div>
                       <div className="col-span-2">
@@ -853,16 +875,16 @@ export const AdminPage: React.FC = () => {
                             
           {u.id !== user?.id && u.status === 'pending' && (
             <>
-              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
+              <button onClick={() => handleUpdateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
                 <CheckCircle2 className="w-5 h-5" />
               </button>
-              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
+              <button onClick={() => handleUpdateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
                 <X className="w-5 h-5" />
               </button>
             </>
           )}
           {u.id !== user?.id && u.status === 'rejected' && (
-            <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
+            <button onClick={() => handleUpdateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
                 <CheckCircle2 className="w-5 h-5" />
               </button>
           )}
@@ -897,7 +919,7 @@ export const AdminPage: React.FC = () => {
                             {u.name}
                             {isCurrentUser && <span className="text-[10px] text-blue-500 font-normal">(bạn)</span>}
                           </div>
-                          <div className="text-xs text-zinc-400 truncate">{u.email}</div>
+                          <div className="text-xs text-zinc-400 truncate">{u.email || '—'}</div>
                         </div>
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
                           u.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-100 text-zinc-500'
@@ -916,16 +938,16 @@ export const AdminPage: React.FC = () => {
                               
           {u.id !== user?.id && u.status === 'pending' && (
             <>
-              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
+              <button onClick={() => handleUpdateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt">
                 <CheckCircle2 className="w-5 h-5" />
               </button>
-              <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
+              <button onClick={() => handleUpdateUserStatus(u.id, 'rejected')} className="text-red-600 hover:text-red-900 mx-1" title="Từ chối">
                 <X className="w-5 h-5" />
               </button>
             </>
           )}
           {u.id !== user?.id && u.status === 'rejected' && (
-            <button onClick={() => useAuthStore.getState().updateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
+            <button onClick={() => handleUpdateUserStatus(u.id, 'approved')} className="text-green-600 hover:text-green-900 mx-1" title="Duyệt lại">
                 <CheckCircle2 className="w-5 h-5" />
               </button>
           )}

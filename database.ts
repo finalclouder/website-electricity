@@ -316,6 +316,17 @@ export const userDb = {
     return data as any;
   },
 
+  async findByIdWithPassword(id: string) {
+    const { data, error } = await getSupabase()
+      .from('users')
+      .select('id, name, email, password, avatar, bio, role, status, created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as any;
+  },
+
   async getAll() {
     const { data, error } = await getSupabase()
       .from('users')
@@ -341,9 +352,10 @@ export const userDb = {
     return this.findById(id);
   },
 
-  async updateProfile(id: string, updates: { name?: string; bio?: string; avatar?: string }) {
+  async updateProfile(id: string, updates: { name?: string; email?: string; bio?: string; avatar?: string }) {
     const payload: Record<string, any> = {};
     if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.email !== undefined) payload.email = updates.email;
     if (updates.bio !== undefined) payload.bio = updates.bio;
     if (updates.avatar !== undefined) payload.avatar = updates.avatar;
     if (Object.keys(payload).length === 0) return;

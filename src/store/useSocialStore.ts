@@ -150,6 +150,7 @@ interface SocialState {
   cancelFriendRequest: (requestId: string) => Promise<void>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  resetSocialState: () => void;
 
   saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateDocument: (docId: string, updates: Partial<SavedDocument>) => Promise<void>;
@@ -185,7 +186,7 @@ export const useSocialStore = create<SocialState>()(
       fetchDocuments: async () => {
         try {
           const docs = await api.get<SavedDocument[]>('/documents');
-          set({ savedDocuments: docs });
+          set({ savedDocuments: Array.isArray(docs) ? docs : [] });
         } catch (error) {
           console.error('Fetch documents error:', error);
         }
@@ -211,7 +212,7 @@ export const useSocialStore = create<SocialState>()(
           set(state => ({
             followersByUserId: {
               ...state.followersByUserId,
-              [userId]: followers,
+              [userId]: Array.isArray(followers) ? followers : [],
             },
           }));
         } catch (error) {
@@ -225,7 +226,7 @@ export const useSocialStore = create<SocialState>()(
           set(state => ({
             followingByUserId: {
               ...state.followingByUserId,
-              [userId]: following,
+              [userId]: Array.isArray(following) ? following : [],
             },
           }));
         } catch (error) {
@@ -236,7 +237,7 @@ export const useSocialStore = create<SocialState>()(
       fetchFriends: async () => {
         try {
           const friends = await api.get<FriendConnection[]>('/social/friends');
-          set({ friends });
+          set({ friends: Array.isArray(friends) ? friends : [] });
         } catch (error) {
           console.error('Fetch friends error:', error);
         }
@@ -246,8 +247,8 @@ export const useSocialStore = create<SocialState>()(
         try {
           const result = await api.get<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>('/social/friend-requests');
           set({
-            incomingFriendRequests: result.incoming,
-            outgoingFriendRequests: result.outgoing,
+            incomingFriendRequests: Array.isArray(result?.incoming) ? result.incoming : [],
+            outgoingFriendRequests: Array.isArray(result?.outgoing) ? result.outgoing : [],
           });
         } catch (error) {
           console.error('Fetch friend requests error:', error);
@@ -257,7 +258,7 @@ export const useSocialStore = create<SocialState>()(
       fetchNotifications: async () => {
         try {
           const notifications = await api.get<AppNotification[]>('/social/notifications');
-          set({ notifications });
+          set({ notifications: Array.isArray(notifications) ? notifications : [] });
         } catch (error) {
           console.error('Fetch notifications error:', error);
         }
@@ -278,7 +279,7 @@ export const useSocialStore = create<SocialState>()(
           set(state => ({
             documentDownloadsByDocumentId: {
               ...state.documentDownloadsByDocumentId,
-              [documentId]: downloads,
+              [documentId]: Array.isArray(downloads) ? downloads : [],
             },
           }));
         } catch (error) {
@@ -531,6 +532,23 @@ export const useSocialStore = create<SocialState>()(
         } catch (error) {
           console.error('Mark all notifications read error:', error);
         }
+      },
+
+      resetSocialState: () => {
+        set({
+          posts: [],
+          savedDocuments: [],
+          isLoaded: false,
+          relationshipsByUserId: {},
+          followersByUserId: {},
+          followingByUserId: {},
+          incomingFriendRequests: [],
+          outgoingFriendRequests: [],
+          friends: [],
+          notifications: [],
+          unreadNotificationCount: 0,
+          documentDownloadsByDocumentId: {},
+        });
       },
 
       saveDocument: async (doc) => {
