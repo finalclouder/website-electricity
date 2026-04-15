@@ -31,10 +31,11 @@ router.get('/my', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/documents/user/:userId - Get all documents for a specific user
+// GET /api/documents/user/:userId - Get documents for a specific user with viewer-aware visibility
 router.get('/user/:userId', authMiddleware, async (req, res) => {
   try {
-    const docs = await docDb.getByAuthor(req.params.userId);
+    const { userId } = (req as any).user;
+    const docs = await docDb.getByAuthor(req.params.userId, userId);
     res.json(docs);
   } catch (error: any) {
     console.error('Get user documents error:', error.message);

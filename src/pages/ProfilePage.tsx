@@ -45,6 +45,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const [viewedUserDocuments, setViewedUserDocuments] = useState<SavedDocument[]>([]);
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(false);
   const [isRelationshipLoading, setIsRelationshipLoading] = useState(false);
+  const [relationshipError, setRelationshipError] = useState<string | null>(null);
 
   const allUsers = getAllUsers();
 
@@ -185,11 +186,13 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   useEffect(() => {
     if (!viewingUserId || viewingUserId === user?.id) {
       setIsRelationshipLoading(false);
+      setRelationshipError(null);
       return;
     }
 
     let cancelled = false;
     setIsRelationshipLoading(true);
+    setRelationshipError(null);
 
     Promise.all([
       fetchRelationship(viewingUserId),
@@ -197,7 +200,11 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       fetchFollowing(viewingUserId),
       fetchFriends(),
     ])
-      .catch(() => undefined)
+      .catch((error: any) => {
+        if (!cancelled) {
+          setRelationshipError(error?.message || 'Không thể tải quan hệ người dùng');
+        }
+      })
       .finally(() => {
         if (!cancelled) {
           setIsRelationshipLoading(false);
@@ -238,14 +245,13 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const handleFollowToggle = async () => {
     if (!viewingUserId || !profileUser) return;
 
-    try {
-      if (relationship?.isFollowing) {
-        await unfollowUser(viewingUserId);
-      } else {
-        await followUser(viewingUserId);
-      }
-    } catch (error) {
-      console.error('Follow toggle mutation error:', error);
+    const result = relationship?.isFollowing
+      ? await unfollowUser(viewingUserId)
+      : await followUser(viewingUserId);
+
+    if (!result.ok) {
+      setProfileNotification({ text: result.error || 'Không thể cập nhật theo dõi', type: 'error' });
+      setTimeout(() => setProfileNotification(null), 3000);
       return;
     }
 
@@ -263,16 +269,17 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const handleFriendAction = async () => {
     if (!viewingUserId || !profileUser) return;
 
-    try {
-      if (incomingRequest) {
-        await acceptFriendRequest(incomingRequest.id);
-      } else if (outgoingRequest) {
-        await cancelFriendRequest(outgoingRequest.id);
-      } else if (!isFriend) {
-        await sendFriendRequest(viewingUserId);
-      }
-    } catch (error) {
-      console.error('Friend action mutation error:', error);
+    const result = incomingRequest
+      ? await acceptFriendRequest(incomingRequest.id)
+      : outgoingRequest
+        ? await cancelFriendRequest(outgoingRequest.id)
+        : !isFriend
+          ? await sendFriendRequest(viewingUserId)
+          : { ok: true };
+
+    if (!result.ok) {
+      setProfileNotification({ text: result.error || 'Không thể cập nhật trạng thái kết bạn', type: 'error' });
+      setTimeout(() => setProfileNotification(null), 3000);
       return;
     }
 
@@ -289,10 +296,10 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const handleRejectIncomingRequest = async () => {
     if (!incomingRequest || !viewingUserId) return;
 
-    try {
-      await rejectFriendRequest(incomingRequest.id);
-    } catch (error) {
-      console.error('Reject friend request mutation error:', error);
+    const result = await rejectFriendRequest(incomingRequest.id);
+    if (!result.ok) {
+      setProfileNotification({ text: result.error || 'Không thể từ chối lời mời kết bạn', type: 'error' });
+      setTimeout(() => setProfileNotification(null), 3000);
       return;
     }
 
@@ -617,7 +624,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               >
                 {isEditing ? <><X size={14} /> Hủy</> : <><Edit3 size={14} /> Chỉnh sửa</>}
               </button>
-            ) : (
+            ) : isViewingOther ? (
               <div className="flex flex-col gap-2 items-stretch sm:items-end">
                 <button
                   onClick={handleFollowToggle}
@@ -644,8 +651,11 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                     </button>
                   )}
                 </div>
+                {relationshipError && (
+                  <p className="text-xs text-red-500 text-right max-w-56">{relationshipError}</p>
+                )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Edit Form - only own profile */}

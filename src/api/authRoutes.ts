@@ -155,7 +155,21 @@ router.put('/profile', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     }
 
-    res.json({ id: updated.id, name: updated.name, email: updated.email, avatar: updated.avatar, bio: updated.bio, role: updated.role, status: updated.status, createdAt: updated.created_at });
+    const token = generateToken({ userId: updated.id, email: updated.email, role: updated.role });
+
+    res.json({
+      token,
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        avatar: updated.avatar,
+        bio: updated.bio,
+        role: updated.role,
+        status: updated.status,
+        createdAt: updated.created_at,
+      },
+    });
   } catch (error: any) {
     console.error('Update profile error:', error.message);
     res.status(500).json({ error: 'Lỗi cập nhật hồ sơ' });

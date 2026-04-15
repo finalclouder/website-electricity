@@ -110,10 +110,11 @@ export const useAuthStore = create<AuthState>()(
             ...updates,
             ...(updates.email !== undefined ? { email: updates.email } : {}),
           };
-          const updatedUser = await api.put<User>('/auth/profile', payload);
+          const data = await api.put<{ token: string; user: User }>('/auth/profile', payload);
           set(state => ({
-            user: updatedUser,
-            cachedUsers: upsertCachedUser(state.cachedUsers, updatedUser),
+            token: data.token,
+            user: data.user,
+            cachedUsers: upsertCachedUser(state.cachedUsers, data.user),
           }));
           return { ok: true };
         } catch (error: any) {

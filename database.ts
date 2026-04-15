@@ -125,6 +125,18 @@ function buildNotificationMessage(notification: { type: string; actorName?: stri
   if (notification.type === 'document_download') {
     return `${actorName} đã tải tài liệu của bạn`;
   }
+  if (notification.type === 'post_like') {
+    return `${actorName} đã thích bài viết của bạn`;
+  }
+  if (notification.type === 'post_comment') {
+    return `${actorName} đã bình luận bài viết của bạn`;
+  }
+  if (notification.type === 'post_share') {
+    return `${actorName} đã chia sẻ bài viết của bạn`;
+  }
+  if (notification.type === 'comment_like') {
+    return `${actorName} đã thích bình luận của bạn`;
+  }
   return `${actorName} có hoạt động mới`;
 }
 
@@ -569,11 +581,12 @@ export const postDb = {
         .eq('target_type', 'post')
         .eq('target_id', postId);
       if (error) throw error;
-      return;
+      return false;
     }
 
     const { error } = await client.from('likes').insert({ user_id: userId, target_type: 'post', target_id: postId });
     if (error) throw error;
+    return true;
   },
 
   async share(postId: string, userId: string) {
@@ -586,7 +599,7 @@ export const postDb = {
       .maybeSingle();
 
     if (existingError) throw existingError;
-    if (existing) return;
+    if (existing) return false;
 
     const { error: insertShareError } = await client.from('shares').insert({ user_id: userId, post_id: postId });
     if (insertShareError) throw insertShareError;
@@ -601,6 +614,7 @@ export const postDb = {
     const nextShares = (post?.shares || 0) + 1;
     const { error: updatePostError } = await client.from('posts').update({ shares: nextShares }).eq('id', postId);
     if (updatePostError) throw updatePostError;
+    return true;
   },
 
   async addComment(comment: { id: string; postId: string; authorId: string; content: string; parentId?: string }) {
@@ -661,11 +675,12 @@ export const postDb = {
         .eq('target_type', 'comment')
         .eq('target_id', commentId);
       if (error) throw error;
-      return;
+      return false;
     }
 
     const { error } = await client.from('likes').insert({ user_id: userId, target_type: 'comment', target_id: commentId });
     if (error) throw error;
+    return true;
   },
 };
 
@@ -711,12 +726,18 @@ export const docDb = {
     return { id: doc.id, title: doc.title, authorId: doc.author_id, authorName: author?.name || '' };
   },
 
-  async getByAuthor(authorId: string) {
-    const { data: docs, error } = await getSupabase()
+  async getByAuthor(authorId: string, viewerId?: string) {
+    let query = getSupabase()
       .from('documents')
       .select('id, title, description, author_id, data_snapshot, status, tags, created_at, updated_at')
       .eq('author_id', authorId)
       .order('updated_at', { ascending: false });
+
+    if (viewerId !== undefined && viewerId !== authorId) {
+      query = query.eq('status', 'approved');
+    }
+
+    const { data: docs, error } = await query;
 
     if (error) throw error;
 
@@ -767,7 +788,15 @@ export const docDb = {
   },
 
   async delete(id: string) {
-    const { error } = await getSupabase().from('documents').delete().eq('id', id);
+    const client = getSupabase();
+
+    const { error: deleteDownloadsError } = await client
+      .from('document_downloads')
+      .delete()
+      .eq('document_id', id);
+    if (deleteDownloadsError) throw deleteDownloadsError;
+
+    const { error } = await client.from('documents').delete().eq('id', id);
     if (error) throw error;
   },
 };

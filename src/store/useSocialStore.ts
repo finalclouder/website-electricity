@@ -90,8 +90,8 @@ export interface AppNotification {
   userId: string;
   actorId: string | null;
   actor: FollowUserSummary | null;
-  type: 'follow' | 'friend_request' | 'friend_accept' | 'document_download';
-  entityType: 'user' | 'friend_request' | 'document';
+  type: 'follow' | 'friend_request' | 'friend_accept' | 'document_download' | 'post_like' | 'post_comment' | 'post_share' | 'comment_like';
+  entityType: 'user' | 'friend_request' | 'document' | 'post' | 'comment';
   entityId: string;
   dataJson: Record<string, any>;
   isRead: boolean;
@@ -142,12 +142,12 @@ interface SocialState {
   editComment: (postId: string, commentId: string, newContent: string) => Promise<void>;
   toggleCommentLike: (postId: string, commentId: string, userId: string) => Promise<void>;
   sharePost: (postId: string, userId: string) => Promise<void>;
-  followUser: (targetUserId: string) => Promise<void>;
-  unfollowUser: (targetUserId: string) => Promise<void>;
-  sendFriendRequest: (targetUserId: string) => Promise<void>;
-  acceptFriendRequest: (requestId: string) => Promise<void>;
-  rejectFriendRequest: (requestId: string) => Promise<void>;
-  cancelFriendRequest: (requestId: string) => Promise<void>;
+  followUser: (targetUserId: string) => Promise<{ ok: boolean; error?: string }>;
+  unfollowUser: (targetUserId: string) => Promise<{ ok: boolean; error?: string }>;
+  sendFriendRequest: (targetUserId: string) => Promise<{ ok: boolean; error?: string }>;
+  acceptFriendRequest: (requestId: string) => Promise<{ ok: boolean; error?: string }>;
+  rejectFriendRequest: (requestId: string) => Promise<{ ok: boolean; error?: string }>;
+  cancelFriendRequest: (requestId: string) => Promise<{ ok: boolean; error?: string }>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
   resetSocialState: () => void;
@@ -185,7 +185,7 @@ export const useSocialStore = create<SocialState>()(
 
       fetchDocuments: async () => {
         try {
-          const docs = await api.get<SavedDocument[]>('/documents');
+          const docs = await api.get<SavedDocument[]>('/documents/my');
           set({ savedDocuments: Array.isArray(docs) ? docs : [] });
         } catch (error) {
           console.error('Fetch documents error:', error);
@@ -422,8 +422,10 @@ export const useSocialStore = create<SocialState>()(
             get().fetchFollowers(targetUserId),
             currentUserId ? get().fetchFollowing(currentUserId) : Promise.resolve(),
           ]);
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Follow user error:', error);
+          return { ok: false, error: error?.message || 'Không thể theo dõi người dùng' };
         }
       },
 
@@ -441,8 +443,10 @@ export const useSocialStore = create<SocialState>()(
             get().fetchFollowers(targetUserId),
             currentUserId ? get().fetchFollowing(currentUserId) : Promise.resolve(),
           ]);
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Unfollow user error:', error);
+          return { ok: false, error: error?.message || 'Không thể bỏ theo dõi người dùng' };
         }
       },
 
@@ -454,8 +458,10 @@ export const useSocialStore = create<SocialState>()(
             outgoingFriendRequests: result.outgoing,
           });
           await get().fetchRelationship(targetUserId);
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Send friend request error:', error);
+          return { ok: false, error: error?.message || 'Không thể gửi lời mời kết bạn' };
         }
       },
 
@@ -471,8 +477,10 @@ export const useSocialStore = create<SocialState>()(
           if (existingRequest) {
             await get().fetchRelationship(existingRequest.senderId);
           }
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Accept friend request error:', error);
+          return { ok: false, error: error?.message || 'Không thể chấp nhận lời mời kết bạn' };
         }
       },
 
@@ -487,8 +495,10 @@ export const useSocialStore = create<SocialState>()(
           if (existingRequest) {
             await get().fetchRelationship(existingRequest.senderId);
           }
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Reject friend request error:', error);
+          return { ok: false, error: error?.message || 'Không thể từ chối lời mời kết bạn' };
         }
       },
 
@@ -503,8 +513,10 @@ export const useSocialStore = create<SocialState>()(
           if (existingRequest) {
             await get().fetchRelationship(existingRequest.receiverId);
           }
-        } catch (error) {
+          return { ok: true };
+        } catch (error: any) {
           console.error('Cancel friend request error:', error);
+          return { ok: false, error: error?.message || 'Không thể hủy lời mời kết bạn' };
         }
       },
 
