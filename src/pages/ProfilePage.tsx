@@ -38,6 +38,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     rejectFriendRequest,
     cancelFriendRequest,
     trackDocumentDownload,
+    updateDocumentStatus,
   } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
@@ -242,6 +243,11 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     }
   };
 
+  const showProfileNotification = (text: string, type: 'success' | 'error' = 'success') => {
+    setProfileNotification({ text, type });
+    setTimeout(() => setProfileNotification(null), 3000);
+  };
+
   const handleFollowToggle = async () => {
     if (!viewingUserId || !profileUser) return;
 
@@ -250,8 +256,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       : await followUser(viewingUserId);
 
     if (!result.ok) {
-      setProfileNotification({ text: result.error || 'Không thể cập nhật theo dõi', type: 'error' });
-      setTimeout(() => setProfileNotification(null), 3000);
+      showProfileNotification(result.error || 'Không thể cập nhật theo dõi', 'error');
       return;
     }
 
@@ -278,8 +283,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
           : { ok: true };
 
     if (!result.ok) {
-      setProfileNotification({ text: result.error || 'Không thể cập nhật trạng thái kết bạn', type: 'error' });
-      setTimeout(() => setProfileNotification(null), 3000);
+      showProfileNotification(result.error || 'Không thể cập nhật trạng thái kết bạn', 'error');
       return;
     }
 
@@ -298,8 +302,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
 
     const result = await rejectFriendRequest(incomingRequest.id);
     if (!result.ok) {
-      setProfileNotification({ text: result.error || 'Không thể từ chối lời mời kết bạn', type: 'error' });
-      setTimeout(() => setProfileNotification(null), 3000);
+      showProfileNotification(result.error || 'Không thể từ chối lời mời kết bạn', 'error');
       return;
     }
 
@@ -340,12 +343,11 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     if (!editName.trim()) return;
     const result = await updateProfile({ name: editName.trim(), email: editEmail.trim(), bio: editBio.trim() });
     if (result.ok) {
-      setProfileNotification({ text: 'Đã cập nhật hồ sơ thành công!', type: 'success' });
+      showProfileNotification('Đã cập nhật hồ sơ thành công!');
       setIsEditing(false);
     } else {
-      setProfileNotification({ text: result.error || 'Lỗi cập nhật hồ sơ', type: 'error' });
+      showProfileNotification(result.error || 'Lỗi cập nhật hồ sơ', 'error');
     }
-    setTimeout(() => setProfileNotification(null), 3000);
   };
 
   const handleCancelEdit = () => {
@@ -410,6 +412,22 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     } catch {
       alert('Không thể sao chép tài liệu');
     }
+  };
+
+  const handleApproveDocument = async (doc: SavedDocument) => {
+    const result = await updateDocumentStatus(doc.id, 'approved');
+    if (!result.ok) {
+      showProfileNotification(result.error || 'Không thể duyệt tài liệu', 'error');
+      return;
+    }
+
+    if (isViewingOther && viewingUserId) {
+      setViewedUserDocuments(currentDocs => currentDocs.map(item =>
+        item.id === doc.id ? { ...item, status: 'approved', updatedAt: new Date().toISOString() } : item
+      ));
+    }
+
+    showProfileNotification('Đã duyệt tài liệu');
   };
 
   const handleChangePassword = async () => {
@@ -995,6 +1013,16 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         <Download size={14} />
                         <span className="hidden sm:inline">{isViewingOther ? 'Tải về & Mở' : 'Mở'}</span>
                       </button>
+                      {user?.role === 'admin' && doc.status !== 'approved' && (
+                        <button
+                          onClick={() => handleApproveDocument(doc)}
+                          className="px-3 py-2 bg-green-50 hover:bg-green-100 text-green-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                          title="Duyệt"
+                        >
+                          <CheckCircle2 size={14} />
+                          <span className="hidden sm:inline">Duyệt</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { useSocialStore } from './store/useSocialStore';
 import { useLandingStore } from './store/useLandingStore';
 import { useNavigationStore } from './store/useNavigationStore';
+import { api } from './utils/api';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { MainLayout } from './components/layout/MainLayout';
@@ -58,16 +59,14 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      import('./utils/api').then(({ api }) => {
-        api.get('/auth/me')
-          .then((user: any) => {
-             useAuthStore.setState({ user });
-             useAuthStore.getState().fetchUsers();
-          })
-          .catch(() => {
-             logout();
-          });
-      });
+      api.get('/auth/me')
+        .then((user: any) => {
+           useAuthStore.setState({ user });
+           useAuthStore.getState().fetchUsers();
+        })
+        .catch(() => {
+           logout();
+        });
       fetchPosts();
       fetchDocuments();
       fetchFriendRequests();

@@ -154,6 +154,7 @@ interface SocialState {
 
   saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateDocument: (docId: string, updates: Partial<SavedDocument>) => Promise<void>;
+  updateDocumentStatus: (docId: string, status: SavedDocument['status']) => Promise<{ ok: boolean; error?: string }>;
   deleteDocument: (docId: string) => Promise<void>;
   trackDocumentDownload: (documentId: string) => Promise<void>;
 }
@@ -596,6 +597,21 @@ export const useSocialStore = create<SocialState>()(
           }));
         } catch (error) {
           console.error('Update document error:', error);
+        }
+      },
+
+      updateDocumentStatus: async (docId, status) => {
+        try {
+          await api.put(`/documents/${docId}`, { status });
+          set(state => ({
+            savedDocuments: state.savedDocuments.map(d =>
+              d.id === docId ? { ...d, status, updatedAt: new Date().toISOString() } : d
+            ),
+          }));
+          return { ok: true };
+        } catch (error: any) {
+          console.error('Update document status error:', error);
+          return { ok: false, error: error?.message || 'Không thể cập nhật trạng thái tài liệu' };
         }
       },
 

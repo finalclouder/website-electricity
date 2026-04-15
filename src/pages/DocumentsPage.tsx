@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileDown, FileText, Trash2, Download, Clock, Search, Plus, Eye, CheckCircle2, Edit3, Copy } from 'lucide-react';
+import { FileDown, FileText, Trash2, Download, Clock, Search, Plus, Eye, CheckCircle2, Edit3, Copy, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
@@ -16,10 +16,11 @@ const STATUS_MAP = {
 
 export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void; onTabChange?: (tab: string) => void }> = ({ onViewProfile, onTabChange }) => {
   const { user } = useAuthStore();
-  const { savedDocuments, saveDocument, deleteDocument, updateDocument, trackDocumentDownload } = useSocialStore();
+  const { savedDocuments, saveDocument, deleteDocument, updateDocumentStatus, trackDocumentDownload } = useSocialStore();
   const { data } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [notification, setNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Preview modal state
   const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
@@ -147,6 +148,20 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     }
   };
 
+  const showNotification = (text: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ text, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleApproveDocument = async (doc: SavedDocument) => {
+    const result = await updateDocumentStatus(doc.id, 'approved');
+    if (!result.ok) {
+      showNotification(result.error || 'Không thể duyệt tài liệu', 'error');
+      return;
+    }
+    showNotification('Đã duyệt tài liệu');
+  };
+
   const filtered = savedDocuments
     .filter(doc => {
       if (filterStatus !== 'all' && doc.status !== filterStatus) return false;
@@ -159,6 +174,16 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
 
   return (
     <div className="h-full overflow-y-auto">
+    {notification && (
+      <div className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border flex items-center gap-2 text-sm font-medium animate-in slide-in-from-right ${
+        notification.type === 'success'
+          ? 'bg-green-50 border-green-200 text-green-700'
+          : 'bg-red-50 border-red-200 text-red-700'
+      }`}>
+        {notification.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+        {notification.text}
+      </div>
+    )}
     <div className="max-w-4xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -285,7 +310,7 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                   )}
                   {user?.role === 'admin' && doc.status !== 'approved' && (
                     <button
-                      onClick={() => updateDocument(doc.id, { status: 'approved' })}
+                      onClick={() => handleApproveDocument(doc)}
                       className="p-2 hover:bg-green-50 rounded-lg text-green-600 transition-colors"
                       title="Duyệt"
                     >
