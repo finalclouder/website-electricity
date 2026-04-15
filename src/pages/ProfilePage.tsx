@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy } from 'lucide-react';
-import { useAuthStore } from '../store/useAuthStore';
+import { ProfileUser, useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
 import { PATCTCData } from '../types';
@@ -60,6 +60,25 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   }, [allUsers, isOwner, user, viewingUserId]);
 
   const safePosts = Array.isArray(posts) ? posts : [];
+  const viewedUserFallback = useMemo<ProfileUser | null>(() => {
+    if (!viewingUserId || isOwner) return null;
+
+    const authoredPost = safePosts.find(post => post.authorId === viewingUserId);
+    if (authoredPost) {
+      return {
+        id: viewingUserId,
+        name: authoredPost.authorName || 'Người dùng',
+        email: undefined,
+        avatar: authoredPost.authorAvatar || '',
+        bio: '',
+        role: authoredPost.authorRole,
+        status: undefined,
+        createdAt: authoredPost.createdAt,
+      };
+    }
+
+    return null;
+  }, [isOwner, safePosts, viewingUserId]);
   const safeSavedDocuments = Array.isArray(savedDocuments) ? savedDocuments : [];
   const safeFriends = Array.isArray(friends) ? friends : [];
   const safeIncomingFriendRequests = Array.isArray(incomingFriendRequests) ? incomingFriendRequests : [];
@@ -69,7 +88,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
   const safeFollowingByUserId = followingByUserId && typeof followingByUserId === 'object' ? followingByUserId : {};
   const safeDocumentDownloadsByDocumentId = documentDownloadsByDocumentId && typeof documentDownloadsByDocumentId === 'object' ? documentDownloadsByDocumentId : {};
 
-  const profileUser = viewedUser ?? (isOwner ? user : null);
+  const profileUser = viewedUser ?? viewedUserFallback ?? (isOwner ? user : null);
   const relationship = viewingUserId ? safeRelationshipsByUserId[viewingUserId] : undefined;
   const followerCount = profileUser ? (safeFollowersByUserId[profileUser.id]?.length ?? relationship?.followerCount ?? 0) : 0;
   const followingCount = profileUser ? (safeFollowingByUserId[profileUser.id]?.length ?? relationship?.followingCount ?? 0) : 0;
@@ -414,10 +433,12 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     }
   };
 
+  const canPublishDocument = (doc: SavedDocument) => user?.role === 'admin' || doc.authorId === user?.id;
+
   const handleApproveDocument = async (doc: SavedDocument) => {
     const result = await updateDocumentStatus(doc.id, 'approved');
     if (!result.ok) {
-      showProfileNotification(result.error || 'Không thể duyệt tài liệu', 'error');
+      showProfileNotification(result.error || 'Không thể công khai tài liệu', 'error');
       return;
     }
 
@@ -427,7 +448,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       ));
     }
 
-    showProfileNotification('Đã duyệt tài liệu');
+    showProfileNotification(doc.authorId === user?.id && user?.role !== 'admin' ? 'Đã công khai tài liệu' : 'Đã duyệt tài liệu');
   };
 
   const handleChangePassword = async () => {
@@ -1013,14 +1034,14 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                         <Download size={14} />
                         <span className="hidden sm:inline">{isViewingOther ? 'Tải về & Mở' : 'Mở'}</span>
                       </button>
-                      {user?.role === 'admin' && doc.status !== 'approved' && (
+                      {canPublishDocument(doc) && doc.status !== 'approved' && (
                         <button
                           onClick={() => handleApproveDocument(doc)}
                           className="px-3 py-2 bg-green-50 hover:bg-green-100 text-green-600 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
-                          title="Duyệt"
+                          title={doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}
                         >
                           <CheckCircle2 size={14} />
-                          <span className="hidden sm:inline">Duyệt</span>
+                          <span className="hidden sm:inline">{doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}</span>
                         </button>
                       )}
                     </div>

@@ -66,6 +66,44 @@ create table if not exists documents (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists user_follows (
+  follower_id text not null references users(id) on delete cascade,
+  following_id text not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, following_id),
+  constraint user_follows_no_self_follow check (follower_id <> following_id)
+);
+
+create table if not exists friend_requests (
+  id text primary key,
+  sender_id text not null references users(id) on delete cascade,
+  receiver_id text not null references users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected', 'cancelled')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint friend_requests_no_self_request check (sender_id <> receiver_id)
+);
+
+create table if not exists notifications (
+  id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  actor_id text references users(id) on delete set null,
+  type text not null,
+  entity_type text not null,
+  entity_id text not null,
+  data_json jsonb not null default '{}'::jsonb,
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists document_downloads (
+  id text primary key,
+  document_id text not null references documents(id) on delete cascade,
+  downloader_id text not null references users(id) on delete cascade,
+  owner_id text not null references users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_posts_author_id on posts(author_id);
 create index if not exists idx_posts_created_at on posts(created_at desc);
 create index if not exists idx_comments_post_id on comments(post_id);
@@ -75,3 +113,11 @@ create index if not exists idx_likes_target on likes(target_type, target_id);
 create index if not exists idx_shares_post_id on shares(post_id);
 create index if not exists idx_documents_author_id on documents(author_id);
 create index if not exists idx_documents_updated_at on documents(updated_at desc);
+create index if not exists idx_user_follows_following_id on user_follows(following_id);
+create index if not exists idx_friend_requests_receiver_status on friend_requests(receiver_id, status, created_at desc);
+create index if not exists idx_friend_requests_sender_status on friend_requests(sender_id, status, created_at desc);
+create index if not exists idx_friend_requests_accepted_lookup on friend_requests(status, sender_id, receiver_id);
+create index if not exists idx_notifications_user_created_at on notifications(user_id, created_at desc);
+create index if not exists idx_notifications_user_is_read on notifications(user_id, is_read);
+create index if not exists idx_document_downloads_document_id on document_downloads(document_id, created_at desc);
+create index if not exists idx_document_downloads_owner_id on document_downloads(owner_id, created_at desc);

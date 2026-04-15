@@ -153,13 +153,15 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     setTimeout(() => setNotification(null), 3000);
   };
 
+  const canPublishDocument = (doc: SavedDocument) => user?.role === 'admin' || doc.authorId === user?.id;
+
   const handleApproveDocument = async (doc: SavedDocument) => {
     const result = await updateDocumentStatus(doc.id, 'approved');
     if (!result.ok) {
-      showNotification(result.error || 'Không thể duyệt tài liệu', 'error');
+      showNotification(result.error || 'Không thể công khai tài liệu', 'error');
       return;
     }
-    showNotification('Đã duyệt tài liệu');
+    showNotification(doc.authorId === user?.id && user?.role !== 'admin' ? 'Đã công khai tài liệu' : 'Đã duyệt tài liệu');
   };
 
   const filtered = savedDocuments
@@ -308,11 +310,11 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                       <Copy size={16} />
                     </button>
                   )}
-                  {user?.role === 'admin' && doc.status !== 'approved' && (
+                  {canPublishDocument(doc) && doc.status !== 'approved' && (
                     <button
                       onClick={() => handleApproveDocument(doc)}
                       className="p-2 hover:bg-green-50 rounded-lg text-green-600 transition-colors"
-                      title="Duyệt"
+                      title={doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}
                     >
                       <CheckCircle2 size={16} />
                     </button>

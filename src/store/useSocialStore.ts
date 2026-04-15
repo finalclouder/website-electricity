@@ -204,6 +204,7 @@ export const useSocialStore = create<SocialState>()(
           }));
         } catch (error) {
           console.error('Fetch relationship error:', error);
+          throw error;
         }
       },
 
@@ -218,6 +219,7 @@ export const useSocialStore = create<SocialState>()(
           }));
         } catch (error) {
           console.error('Fetch followers error:', error);
+          throw error;
         }
       },
 
@@ -232,6 +234,7 @@ export const useSocialStore = create<SocialState>()(
           }));
         } catch (error) {
           console.error('Fetch following error:', error);
+          throw error;
         }
       },
 
@@ -241,6 +244,7 @@ export const useSocialStore = create<SocialState>()(
           set({ friends: Array.isArray(friends) ? friends : [] });
         } catch (error) {
           console.error('Fetch friends error:', error);
+          throw error;
         }
       },
 

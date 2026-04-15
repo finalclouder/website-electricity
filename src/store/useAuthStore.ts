@@ -9,9 +9,74 @@ function upsertCachedUser(cachedUsers: ProfileUser[], nextUser: ProfileUser): Pr
     return [...cachedUsers, nextUser];
   }
 
+  const previousUser = cachedUsers[existingIndex];
+  const mergedUser: ProfileUser = {
+    ...previousUser,
+    ...nextUser,
+    email: nextUser.email ?? previousUser.email,
+    role: nextUser.role ?? previousUser.role,
+    status: nextUser.status ?? previousUser.status,
+    avatar: nextUser.avatar ?? previousUser.avatar,
+    bio: nextUser.bio ?? previousUser.bio,
+    createdAt: nextUser.createdAt || previousUser.createdAt,
+  };
+
   const nextCachedUsers = [...cachedUsers];
-  nextCachedUsers[existingIndex] = nextUser;
+  nextCachedUsers[existingIndex] = mergedUser;
   return nextCachedUsers;
+}
+
+function getFallbackProfileUser(userId: string): ProfileUser | null {
+  const socialState = useSocialStore.getState();
+  const posts = Array.isArray(socialState.posts) ? socialState.posts : [];
+
+  const authoredPost = posts.find(post => post.authorId === userId);
+  if (authoredPost) {
+    return {
+      id: userId,
+      name: authoredPost.authorName || 'Người dùng',
+      email: undefined,
+      avatar: authoredPost.authorAvatar || '',
+      bio: '',
+      role: authoredPost.authorRole,
+      status: undefined,
+      createdAt: authoredPost.createdAt,
+    };
+  }
+
+  for (const post of posts) {
+    const comments = Array.isArray(post.comments) ? post.comments : [];
+    const authoredComment = comments.find(comment => comment.authorId === userId);
+    if (authoredComment) {
+      return {
+        id: userId,
+        name: authoredComment.authorName || 'Người dùng',
+        email: undefined,
+        avatar: authoredComment.authorAvatar || '',
+        bio: '',
+        role: undefined,
+        status: undefined,
+        createdAt: authoredComment.createdAt,
+      };
+    }
+  }
+
+  const documents = Array.isArray(socialState.savedDocuments) ? socialState.savedDocuments : [];
+  const authoredDocument = documents.find(document => document.authorId === userId);
+  if (authoredDocument) {
+    return {
+      id: userId,
+      name: authoredDocument.authorName || 'Người dùng',
+      email: undefined,
+      avatar: '',
+      bio: '',
+      role: undefined,
+      status: undefined,
+      createdAt: authoredDocument.createdAt,
+    };
+  }
+
+  return null;
 }
 
 export interface ProfileUser {
@@ -171,6 +236,13 @@ export const useAuthStore = create<AuthState>()(
           if (error.message === 'Không tìm thấy người dùng') {
             return null;
           }
+
+          const fallbackUser = getFallbackProfileUser(userId);
+          if (fallbackUser) {
+            set(state => ({ cachedUsers: upsertCachedUser(state.cachedUsers, fallbackUser) }));
+            return fallbackUser;
+          }
+
           throw error;
         }
       },

@@ -57,6 +57,33 @@ function maybeArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+const warnedMissingTables = new Set<string>();
+
+function getErrorText(error: any) {
+  return `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+}
+
+function isMissingTableError(error: any, tableName: string) {
+  const normalizedTable = tableName.toLowerCase();
+  const text = getErrorText(error);
+
+  return error?.code === '42P01'
+    || error?.code === 'PGRST205'
+    || (text.includes('does not exist') && text.includes(normalizedTable))
+    || (text.includes('could not find the table') && text.includes(normalizedTable))
+    || text.includes(`public.${normalizedTable}`)
+    || text.includes(`'${normalizedTable}'`);
+}
+
+function warnMissingTable(tableName: string, error: any) {
+  if (warnedMissingTables.has(tableName)) return;
+  warnedMissingTables.add(tableName);
+  console.warn(
+    `Supabase table "${tableName}" is missing. Related features will stay in fallback mode until the SQL hotfix is applied.`,
+    error?.message || error
+  );
+}
+
 function groupRowsBy<T extends Record<string, any>>(rows: T[], key: keyof T) {
   const grouped = new Map<string, T[]>();
   for (const row of rows) {
@@ -803,49 +830,73 @@ export const docDb = {
 
 export const followDb = {
   async getFollowers(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('user_follows')
-      .select('follower_id, following_id, created_at')
-      .eq('following_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('user_follows')
+        .select('follower_id, following_id, created_at')
+        .eq('following_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.map(row => row.follower_id));
-    return rows.map(row => ({
-      ...toUserSummary(users.get(row.follower_id) || { id: row.follower_id }),
-      createdAt: row.created_at,
-    }));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.map(row => row.follower_id));
+      return rows.map(row => ({
+        ...toUserSummary(users.get(row.follower_id) || { id: row.follower_id }),
+        createdAt: row.created_at,
+      }));
+    } catch (error: any) {
+      if (isMissingTableError(error, 'user_follows')) {
+        warnMissingTable('user_follows', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async getFollowing(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('user_follows')
-      .select('follower_id, following_id, created_at')
-      .eq('follower_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('user_follows')
+        .select('follower_id, following_id, created_at')
+        .eq('follower_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.map(row => row.following_id));
-    return rows.map(row => ({
-      ...toUserSummary(users.get(row.following_id) || { id: row.following_id }),
-      createdAt: row.created_at,
-    }));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.map(row => row.following_id));
+      return rows.map(row => ({
+        ...toUserSummary(users.get(row.following_id) || { id: row.following_id }),
+        createdAt: row.created_at,
+      }));
+    } catch (error: any) {
+      if (isMissingTableError(error, 'user_follows')) {
+        warnMissingTable('user_follows', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async isFollowing(followerId: string, followingId: string) {
-    const { data, error } = await getSupabase()
-      .from('user_follows')
-      .select('follower_id')
-      .eq('follower_id', followerId)
-      .eq('following_id', followingId)
-      .maybeSingle();
+    try {
+      const { data, error } = await getSupabase()
+        .from('user_follows')
+        .select('follower_id')
+        .eq('follower_id', followerId)
+        .eq('following_id', followingId)
+        .maybeSingle();
 
-    if (error) throw error;
-    return Boolean(data);
+      if (error) throw error;
+      return Boolean(data);
+    } catch (error: any) {
+      if (isMissingTableError(error, 'user_follows')) {
+        warnMissingTable('user_follows', error);
+        return false;
+      }
+      throw error;
+    }
   },
 
   async follow(followerId: string, followingId: string) {
@@ -874,13 +925,14 @@ export const followDb = {
   },
 
   async getRelationshipSummary(viewerId: string, targetUserId: string) {
-    const [isFollowing, followers, following, incomingPending, outgoingPending, acceptedRequest] = await Promise.all([
+    const [isFollowing, followers, following, incomingPending, outgoingPending, acceptedRequest, isFollowedBy] = await Promise.all([
       this.isFollowing(viewerId, targetUserId),
       this.getFollowers(targetUserId),
       this.getFollowing(targetUserId),
       friendRequestDb.findPendingBetween(targetUserId, viewerId),
       friendRequestDb.findPendingBetween(viewerId, targetUserId),
       friendRequestDb.findAcceptedBetween(viewerId, targetUserId),
+      this.isFollowing(targetUserId, viewerId),
     ]);
 
     let friendStatus: 'none' | 'incoming_request' | 'outgoing_request' | 'friends' = 'none';
@@ -895,7 +947,7 @@ export const followDb = {
     return {
       targetUserId,
       isFollowing,
-      isFollowedBy: await this.isFollowing(targetUserId, viewerId),
+      isFollowedBy,
       followerCount: followers.length,
       followingCount: following.length,
       friendStatus,
@@ -905,105 +957,145 @@ export const followDb = {
 
 export const friendRequestDb = {
   async listIncoming(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('friend_requests')
-      .select('id, sender_id, receiver_id, status, created_at, updated_at')
-      .eq('receiver_id', userId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('friend_requests')
+        .select('id, sender_id, receiver_id, status, created_at, updated_at')
+        .eq('receiver_id', userId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.flatMap(row => [row.sender_id, row.receiver_id]));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.flatMap(row => [row.sender_id, row.receiver_id]));
 
-    return rows.map(row => ({
-      id: row.id,
-      senderId: row.sender_id,
-      receiverId: row.receiver_id,
-      sender: toUserSummary(users.get(row.sender_id) || { id: row.sender_id }),
-      receiver: toUserSummary(users.get(row.receiver_id) || { id: row.receiver_id }),
-      status: toFriendRequestStatus(row.status),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+      return rows.map(row => ({
+        id: row.id,
+        senderId: row.sender_id,
+        receiverId: row.receiver_id,
+        sender: toUserSummary(users.get(row.sender_id) || { id: row.sender_id }),
+        receiver: toUserSummary(users.get(row.receiver_id) || { id: row.receiver_id }),
+        status: toFriendRequestStatus(row.status),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (error: any) {
+      if (isMissingTableError(error, 'friend_requests')) {
+        warnMissingTable('friend_requests', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async listOutgoing(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('friend_requests')
-      .select('id, sender_id, receiver_id, status, created_at, updated_at')
-      .eq('sender_id', userId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('friend_requests')
+        .select('id, sender_id, receiver_id, status, created_at, updated_at')
+        .eq('sender_id', userId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.flatMap(row => [row.sender_id, row.receiver_id]));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.flatMap(row => [row.sender_id, row.receiver_id]));
 
-    return rows.map(row => ({
-      id: row.id,
-      senderId: row.sender_id,
-      receiverId: row.receiver_id,
-      sender: toUserSummary(users.get(row.sender_id) || { id: row.sender_id }),
-      receiver: toUserSummary(users.get(row.receiver_id) || { id: row.receiver_id }),
-      status: toFriendRequestStatus(row.status),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+      return rows.map(row => ({
+        id: row.id,
+        senderId: row.sender_id,
+        receiverId: row.receiver_id,
+        sender: toUserSummary(users.get(row.sender_id) || { id: row.sender_id }),
+        receiver: toUserSummary(users.get(row.receiver_id) || { id: row.receiver_id }),
+        status: toFriendRequestStatus(row.status),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (error: any) {
+      if (isMissingTableError(error, 'friend_requests')) {
+        warnMissingTable('friend_requests', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async listFriends(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('friend_requests')
-      .select('id, sender_id, receiver_id, status, created_at, updated_at')
-      .eq('status', 'accepted')
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-      .order('updated_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('friend_requests')
+        .select('id, sender_id, receiver_id, status, created_at, updated_at')
+        .eq('status', 'accepted')
+        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+        .order('updated_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const friendIds = rows.map(row => row.sender_id === userId ? row.receiver_id : row.sender_id);
-    const users = await fetchUsersMap(friendIds);
+      const rows = maybeArray(data);
+      const friendIds = rows.map(row => row.sender_id === userId ? row.receiver_id : row.sender_id);
+      const users = await fetchUsersMap(friendIds);
 
-    return rows.map(row => {
-      const friendId = row.sender_id === userId ? row.receiver_id : row.sender_id;
-      return {
-        requestId: row.id,
-        userId: friendId,
-        user: toUserSummary(users.get(friendId) || { id: friendId }),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
-    });
+      return rows.map(row => {
+        const friendId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+        return {
+          requestId: row.id,
+          userId: friendId,
+          user: toUserSummary(users.get(friendId) || { id: friendId }),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+      });
+    } catch (error: any) {
+      if (isMissingTableError(error, 'friend_requests')) {
+        warnMissingTable('friend_requests', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async findPendingBetween(senderId: string, receiverId: string) {
-    const { data, error } = await getSupabase()
-      .from('friend_requests')
-      .select('id, sender_id, receiver_id, status, created_at, updated_at')
-      .eq('sender_id', senderId)
-      .eq('receiver_id', receiverId)
-      .eq('status', 'pending')
-      .maybeSingle();
+    try {
+      const { data, error } = await getSupabase()
+        .from('friend_requests')
+        .select('id, sender_id, receiver_id, status, created_at, updated_at')
+        .eq('sender_id', senderId)
+        .eq('receiver_id', receiverId)
+        .eq('status', 'pending')
+        .maybeSingle();
 
-    if (error) throw error;
-    return data as any;
+      if (error) throw error;
+      return data as any;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'friend_requests')) {
+        warnMissingTable('friend_requests', error);
+        return null;
+      }
+      throw error;
+    }
   },
 
   async findAcceptedBetween(userA: string, userB: string) {
-    const { data, error } = await getSupabase()
-      .from('friend_requests')
-      .select('id, sender_id, receiver_id, status, created_at, updated_at')
-      .eq('status', 'accepted')
-      .in('sender_id', [userA, userB])
-      .in('receiver_id', [userA, userB])
-      .maybeSingle();
+    try {
+      const { data, error } = await getSupabase()
+        .from('friend_requests')
+        .select('id, sender_id, receiver_id, status, created_at, updated_at')
+        .eq('status', 'accepted')
+        .in('sender_id', [userA, userB])
+        .in('receiver_id', [userA, userB])
+        .maybeSingle();
 
-    if (error) throw error;
-    return data as any;
+      if (error) throw error;
+      return data as any;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'friend_requests')) {
+        warnMissingTable('friend_requests', error);
+        return null;
+      }
+      throw error;
+    }
   },
 
   async sendRequest(senderId: string, receiverId: string) {
@@ -1116,123 +1208,181 @@ export const friendRequestDb = {
 
 export const notificationDb = {
   async listForUser(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('notifications')
-      .select('id, user_id, actor_id, type, entity_type, entity_id, data_json, is_read, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('notifications')
+        .select('id, user_id, actor_id, type, entity_type, entity_id, data_json, is_read, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.map(row => row.actor_id).filter(Boolean));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.map(row => row.actor_id).filter(Boolean));
 
-    return rows.map(row => {
-      const actor = row.actor_id ? users.get(row.actor_id) : null;
-      return {
-        id: row.id,
-        userId: row.user_id,
-        actorId: row.actor_id || null,
-        actor: actor ? toUserSummary(actor) : null,
-        type: row.type,
-        entityType: row.entity_type,
-        entityId: row.entity_id,
-        dataJson: safeJsonParse(row.data_json, {}),
-        isRead: Boolean(row.is_read),
-        createdAt: row.created_at,
-        message: buildNotificationMessage({ type: row.type, actorName: actor?.name, entityType: row.entity_type }),
-      };
-    });
+      return rows.map(row => {
+        const actor = row.actor_id ? users.get(row.actor_id) : null;
+        return {
+          id: row.id,
+          userId: row.user_id,
+          actorId: row.actor_id || null,
+          actor: actor ? toUserSummary(actor) : null,
+          type: row.type,
+          entityType: row.entity_type,
+          entityId: row.entity_id,
+          dataJson: safeJsonParse(row.data_json, {}),
+          isRead: Boolean(row.is_read),
+          createdAt: row.created_at,
+          message: buildNotificationMessage({ type: row.type, actorName: actor?.name, entityType: row.entity_type }),
+        };
+      });
+    } catch (error: any) {
+      if (isMissingTableError(error, 'notifications')) {
+        warnMissingTable('notifications', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async getUnreadCount(userId: string) {
-    const { data, error } = await getSupabase()
-      .from('notifications')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('is_read', false);
+    try {
+      const { data, error } = await getSupabase()
+        .from('notifications')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_read', false);
 
-    if (error) throw error;
-    return maybeArray(data).length;
+      if (error) throw error;
+      return maybeArray(data).length;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'notifications')) {
+        warnMissingTable('notifications', error);
+        return 0;
+      }
+      throw error;
+    }
   },
 
   async create(notification: { userId: string; actorId?: string | null; type: string; entityType: string; entityId: string; dataJson?: Record<string, any> }) {
     const id = crypto.randomUUID();
-    const { error } = await getSupabase().from('notifications').insert({
-      id,
-      user_id: notification.userId,
-      actor_id: notification.actorId || null,
-      type: notification.type,
-      entity_type: notification.entityType,
-      entity_id: notification.entityId,
-      data_json: notification.dataJson || {},
-      is_read: false,
-      created_at: toIsoNow(),
-    });
 
-    if (error) throw error;
-    return id;
+    try {
+      const { error } = await getSupabase().from('notifications').insert({
+        id,
+        user_id: notification.userId,
+        actor_id: notification.actorId || null,
+        type: notification.type,
+        entity_type: notification.entityType,
+        entity_id: notification.entityId,
+        data_json: notification.dataJson || {},
+        is_read: false,
+        created_at: toIsoNow(),
+      });
+
+      if (error) throw error;
+      return id;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'notifications')) {
+        warnMissingTable('notifications', error);
+        return id;
+      }
+      throw error;
+    }
   },
 
   async markAsRead(notificationId: string, userId: string) {
-    const { error } = await getSupabase()
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId)
-      .eq('user_id', userId);
+    try {
+      const { error } = await getSupabase()
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId)
+        .eq('user_id', userId);
 
-    if (error) throw error;
-    return true;
+      if (error) throw error;
+      return true;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'notifications')) {
+        warnMissingTable('notifications', error);
+        return true;
+      }
+      throw error;
+    }
   },
 
   async markAllAsRead(userId: string) {
-    const { error } = await getSupabase()
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+    try {
+      const { error } = await getSupabase()
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', userId)
+        .eq('is_read', false);
 
-    if (error) throw error;
-    return true;
+      if (error) throw error;
+      return true;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'notifications')) {
+        warnMissingTable('notifications', error);
+        return true;
+      }
+      throw error;
+    }
   },
 };
 
 export const documentDownloadDb = {
   async trackDownload({ documentId, downloaderId, ownerId }: { documentId: string; downloaderId: string; ownerId: string }) {
     const id = crypto.randomUUID();
-    const { error } = await getSupabase().from('document_downloads').insert({
-      id,
-      document_id: documentId,
-      downloader_id: downloaderId,
-      owner_id: ownerId,
-      created_at: toIsoNow(),
-    });
 
-    if (error) throw error;
-    return id;
+    try {
+      const { error } = await getSupabase().from('document_downloads').insert({
+        id,
+        document_id: documentId,
+        downloader_id: downloaderId,
+        owner_id: ownerId,
+        created_at: toIsoNow(),
+      });
+
+      if (error) throw error;
+      return id;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'document_downloads')) {
+        warnMissingTable('document_downloads', error);
+        return id;
+      }
+      throw error;
+    }
   },
 
   async listByDocument(documentId: string) {
-    const { data, error } = await getSupabase()
-      .from('document_downloads')
-      .select('id, document_id, downloader_id, owner_id, created_at')
-      .eq('document_id', documentId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await getSupabase()
+        .from('document_downloads')
+        .select('id, document_id, downloader_id, owner_id, created_at')
+        .eq('document_id', documentId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const rows = maybeArray(data);
-    const users = await fetchUsersMap(rows.flatMap(row => [row.downloader_id, row.owner_id]));
+      const rows = maybeArray(data);
+      const users = await fetchUsersMap(rows.flatMap(row => [row.downloader_id, row.owner_id]));
 
-    return rows.map(row => ({
-      id: row.id,
-      documentId: row.document_id,
-      downloaderId: row.downloader_id,
-      ownerId: row.owner_id,
-      downloader: toUserSummary(users.get(row.downloader_id) || { id: row.downloader_id }),
-      owner: toUserSummary(users.get(row.owner_id) || { id: row.owner_id }),
-      createdAt: row.created_at,
-    }));
+      return rows.map(row => ({
+        id: row.id,
+        documentId: row.document_id,
+        downloaderId: row.downloader_id,
+        ownerId: row.owner_id,
+        downloader: toUserSummary(users.get(row.downloader_id) || { id: row.downloader_id }),
+        owner: toUserSummary(users.get(row.owner_id) || { id: row.owner_id }),
+        createdAt: row.created_at,
+      }));
+    } catch (error: any) {
+      if (isMissingTableError(error, 'document_downloads')) {
+        warnMissingTable('document_downloads', error);
+        return [];
+      }
+      throw error;
+    }
   },
 
   async getCountsByDocumentIds(documentIds: string[]) {
