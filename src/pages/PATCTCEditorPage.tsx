@@ -37,6 +37,7 @@ export const PATCTCEditorPage: React.FC = () => {
   const { user } = useAuthStore();
   const { saveDocument, savedDocuments, updateDocument, deleteDocument } = useSocialStore();
   const [saveNotif, setSaveNotif] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showDocsPanel, setShowDocsPanel] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
   const [previewData, setPreviewData] = useState<PATCTCData | null>(null);
@@ -95,20 +96,33 @@ export const PATCTCEditorPage: React.FC = () => {
 
   // === Auto-sync effects ===
 
-  // Auto-save debounced (save current data after each change, 3s debounce)
+  // Keep a ref so the autosave timer can read the latest isSaving value
+  // without becoming a dependency of the effect (which would restart the timer).
+  const isSavingRef = React.useRef(false);
+
+  // Auto-save debounced (save current data after each change, 3s debounce).
+  // Does NOT fire when a manual save is already in progress.
   useEffect(() => {
     if (!user) return;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      if (isSavingRef.current) return; // manual save in progress — skip
       const currentData = useStore.getState().data;
       const title = `PA ${currentData.soVb} - ĐZ ${currentData.dz} cột ${currentData.cot}`;
       const description = currentData.jobItems.join(', ');
       const existingDoc = savedDocuments.find(d => d.authorId === user.id && d.title === title);
       if (existingDoc) {
-        updateDocument(existingDoc.id, {
-          description,
-          dataSnapshot: JSON.stringify(currentData),
-          tags: [currentData.dz, `cột ${currentData.cot}`, currentData.donViThiCong]
-        });
+        isSavingRef.current = true;
+        setIsSaving(true);
+        try {
+          await updateDocument(existingDoc.id, {
+            description,
+            dataSnapshot: JSON.stringify(currentData),
+            tags: [currentData.dz, `cột ${currentData.cot}`, currentData.donViThiCong]
+          });
+        } finally {
+          isSavingRef.current = false;
+          setIsSaving(false);
+        }
       }
     }, 3000);
     return () => clearTimeout(timer);
@@ -249,32 +263,39 @@ export const PATCTCEditorPage: React.FC = () => {
   const [isExportingDocx, setIsExportingDocx] = React.useState(false);
 
   // === Save document ===
-  const handleSave = () => {
-    if (!user) return;
+  const handleSave = async () => {
+    if (!user || isSavingRef.current) return; // already saving — block re-entry
     const title = `PA ${data.soVb} - ĐZ ${data.dz} cột ${data.cot}`;
     const description = data.jobItems.join(', ');
 
-    // Check if existing doc matches (same user, same soVb)
-    const existingDoc = savedDocuments.find(d => d.authorId === user.id && d.title === title);
-    if (existingDoc) {
-      updateDocument(existingDoc.id, {
-        description,
-        dataSnapshot: JSON.stringify(data),
-        tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
-      });
-    } else {
-      saveDocument({
-        title,
-        description,
-        authorId: user.id,
-        authorName: user.name,
-        dataSnapshot: JSON.stringify(data),
-        status: 'draft',
-        tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
-      });
+    isSavingRef.current = true;
+    setIsSaving(true);
+    try {
+      // Check if existing doc matches (same user, same soVb)
+      const existingDoc = savedDocuments.find(d => d.authorId === user.id && d.title === title);
+      if (existingDoc) {
+        await updateDocument(existingDoc.id, {
+          description,
+          dataSnapshot: JSON.stringify(data),
+          tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
+        });
+      } else {
+        await saveDocument({
+          title,
+          description,
+          authorId: user.id,
+          authorName: user.name,
+          dataSnapshot: JSON.stringify(data),
+          status: 'draft',
+          tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
+        });
+      }
+      setSaveNotif(true);
+      setTimeout(() => setSaveNotif(false), 2000);
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
-    setSaveNotif(true);
-    setTimeout(() => setSaveNotif(false), 2000);
   };
 
   const exportDocx = async () => {
@@ -489,15 +510,22 @@ export const PATCTCEditorPage: React.FC = () => {
           <div className="flex gap-2 mb-2">
             <button
               onClick={handleSave}
+              disabled={isSaving}
               className={`flex-1 py-2.5 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm ${
                 saveNotif
                   ? 'bg-green-100 text-green-700 border border-green-300'
-                  : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
+                  : isSaving
+                    ? 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed'
+                    : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200'
               }`}
             >
               {saveNotif ? (
                 <>
                   <CheckCircle2 size={16} /> Đã lưu!
+                </>
+              ) : isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Đang lưu...
                 </>
               ) : (
                 <>

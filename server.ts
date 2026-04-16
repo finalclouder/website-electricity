@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import helmet from "helmet";
 import {
   Document,
   Packer,
@@ -77,6 +78,7 @@ import documentRoutes from './src/api/documentRoutes.js';
 import landingRoutes from './src/api/landingRoutes.js';
 import { authMiddleware } from './src/api/authMiddleware.js';
 import { uploadsRoot } from './src/api/landingRoutes.js';
+import rateLimit from 'express-rate-limit';
 
 function createInMemoryRateLimiter(windowMs: number, maxRequests: number) {
   const hits = new Map<string, { count: number; resetAt: number }>();
@@ -109,24 +111,66 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const exportRateLimit = createInMemoryRateLimiter(60 * 1000, 8);
 
+  // ── Trust proxy ────────────────────────────────────────────────────────────
+  // Behind Cloudflare → Nginx/reverse proxy → Express.
+  // "2" means trust exactly 2 hops: the nearest proxy sets X-Forwarded-For
+  // and Cloudflare prepends the real client IP. This makes req.ip return
+  // the true client IP for rate limiting, NOT the proxy's loopback address.
+  // Without this, all users share a single rate-limit bucket (the proxy IP).
+  app.set('trust proxy', 2);
+
+  // Global API rate limiter — 60 requests per minute per IP
+  const apiRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.' },
+    skip: (req) => req.method === 'GET', // GET requests are read-only; skip to avoid blocking feeds
+  });
+
+  // Stricter limiter for auth mutations (login/register) — 20 per minute per IP
+  const authRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau.' },
+  });
+
   // Body size limit - 10MB for base64 images
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Security headers
-  app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    next();
-  });
+  // ── Security headers (Helmet) ──────────────────────────────────────────────
+  // Sets CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy,
+  // and many more in a single battle-tested middleware.
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        // Allow inline scripts and Cloudflare insights
+        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com"],
+        // Allow images from any secure source (Supabase, Unsplash, Google/FB avatars, etc.)
+        "img-src": ["'self'", "data:", "blob:", "https:"],
+        // Allow media from Supabase and w3schools (placeholder videos)
+        "media-src": ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in", "https://www.w3schools.com"],
+        // Allow connections to Supabase API, Realtime WS, Gemini, Safe Browsing
+        "connect-src": ["'self'", "https://*.supabase.co", "https://*.supabase.in", "wss://*.supabase.co", "wss://*.supabase.in", "https://generativelanguage.googleapis.com", "https://safebrowsing.googleapis.com"],
+        // Allow Google Fonts
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Required for Supabase Storage images
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin images from Supabase
+  }));
 
   // API routes - modular
-  app.use('/api/auth', authRoutes);
-  app.use('/api/posts', socialRoutes);
-  app.use('/api/social', socialGraphRoutes);
-  app.use('/api/documents', documentRoutes);
+  app.use('/api/auth', authRateLimit, authRoutes);
+  app.use('/api/posts', apiRateLimit, socialRoutes);
+  app.use('/api/social', apiRateLimit, socialGraphRoutes);
+  app.use('/api/documents', apiRateLimit, documentRoutes);
   app.use('/api/landing', landingRoutes);
   app.use('/uploads', express.static(uploadsRoot));
 

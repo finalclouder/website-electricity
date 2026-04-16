@@ -8,11 +8,13 @@ import { authMiddleware } from './authMiddleware.js';
 
 const router = Router();
 
-// GET /api/documents - Get all documents (requires auth)
+// GET /api/documents - Get paginated public documents (requires auth)
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const docs = await docDb.getAll();
-    res.json(docs);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const result = await docDb.getPaginated(page, limit);
+    res.json(result);
   } catch (error: any) {
     console.error('Get documents error:', error.message);
     res.status(500).json({ error: 'Lỗi tải tài liệu' });

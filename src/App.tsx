@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
+import { Toaster } from 'sonner';
 import { useAuthStore } from './store/useAuthStore';
 import { useSocialStore } from './store/useSocialStore';
 import { useLandingStore } from './store/useLandingStore';
-import { useNavigationStore } from './store/useNavigationStore';
+import { useNavigationStore, readTabFromUrl } from './store/useNavigationStore';
 import { api } from './utils/api';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -21,6 +22,10 @@ export default function App() {
     fetchFriendRequests,
     fetchNotifications,
     fetchUnreadNotificationCount,
+    subscribeToNotifications,
+    unsubscribeFromNotifications,
+    subscribeToPosts,
+    unsubscribeFromPosts,
   } = useSocialStore();
   const { fetchConfigFromServer } = useLandingStore();
   const {
@@ -57,6 +62,22 @@ export default function App() {
     fetchConfigFromServer();
   }, []);
 
+  // Seed the URL with the current tab on first mount if authenticated and no
+  // tab param exists yet. This covers the "returning user" case: localStorage
+  // restores the last tab but the URL is bare `/`.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const { tab: urlTab } = readTabFromUrl();
+    if (!urlTab) {
+      // Use replaceState — don't pollute history on initial load
+      const params = new URLSearchParams();
+      params.set('tab', activeTab);
+      if (activeTab === 'user-profile' && viewingUserId) params.set('uid', viewingUserId);
+      window.history.replaceState({ tab: activeTab, uid: viewingUserId }, '', `${window.location.pathname}?${params.toString()}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]); // Only on auth change — intentionally not re-running on tab changes
+
   useEffect(() => {
     if (isAuthenticated) {
       api.get('/auth/me')
@@ -83,6 +104,22 @@ export default function App() {
     fetchUnreadNotificationCount,
   ]);
 
+  // Realtime notification subscription — subscribe on login, unsubscribe on logout.
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      subscribeToNotifications(user.id);
+      subscribeToPosts();
+    } else {
+      unsubscribeFromNotifications();
+      unsubscribeFromPosts();
+    }
+    return () => {
+      unsubscribeFromNotifications();
+      unsubscribeFromPosts();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -96,18 +133,61 @@ export default function App() {
     }
   }, [isAuthenticated, activeTab, user?.role, viewingUserId, previousTab, navigateToTab]);
 
+  // Sync Zustand navigation state when the user presses Back / Forward.
+  // We listen to `popstate` (fired by the browser on history traversal) and
+  // read the URL to determine the target tab, then update the store to match.
+  // This is mounted/unmounted with the App component — one listener, no leaks.
+  useEffect(() => {
+    const handlePopState = () => {
+      const { tab, uid } = readTabFromUrl();
+      if (!tab) {
+        // URL has no tab param — treat as landing / default
+        returnToLanding();
+        return;
+      }
+      if (tab === 'user-profile' && uid) {
+        // Directly update state instead of calling viewUserProfile()
+        // to avoid pushing another history entry on top of a popstate.
+        useNavigationStore.setState((state) => ({
+          previousTab: state.activeTab === 'user-profile'
+            ? state.previousTab
+            : (state.activeTab as typeof state.previousTab),
+          viewingUserId: uid,
+          activeTab: 'user-profile',
+        }));
+      } else {
+        // Same: update state directly without a new pushState
+        useNavigationStore.setState({
+          activeTab: tab,
+          viewingUserId: null,
+        });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [returnToLanding]);
+
   // Gate 1: Public landing page (only when not logged in)
   if (showLanding && !isAuthenticated) {
-    return <LandingPage onEnter={enterFromLanding} />;
+    return (
+      <>
+        <Toaster position="top-right" richColors />
+        <LandingPage onEnter={enterFromLanding} />
+      </>
+    );
   }
 
   // Gate 2: Auth wall
   if (!isAuthenticated) {
     return (
-      <LoginPage
-        onBackToLanding={returnToLanding}
-        initialRegister={initialRegister}
-      />
+      <>
+        <Toaster position="top-right" richColors />
+        <LoginPage
+          onBackToLanding={returnToLanding}
+          initialRegister={initialRegister}
+        />
+      </>
     );
   }
 
@@ -125,13 +205,16 @@ export default function App() {
 
   // Main app with tab navigation
   return (
-    <MainLayout activeTab={activeTab} onTabChange={handleTabChange}>
-      {activeTab === 'patctc' && <PATCTCEditorPage />}
-      {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
-      {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
-      {activeTab === 'profile' && <ProfilePage onTabChange={handleTabChange} />}
-      {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} onTabChange={handleTabChange} />}
-      {activeTab === 'admin' && <AdminPage />}
-    </MainLayout>
+    <>
+      <Toaster position="top-right" richColors />
+      <MainLayout activeTab={activeTab} onTabChange={handleTabChange}>
+        {activeTab === 'patctc' && <PATCTCEditorPage />}
+        {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
+        {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
+        {activeTab === 'profile' && <ProfilePage onTabChange={handleTabChange} />}
+        {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} onTabChange={handleTabChange} />}
+        {activeTab === 'admin' && <AdminPage />}
+      </MainLayout>
+    </>
   );
 }

@@ -1,7 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Heart, MessageCircle, Share2, Send, MoreHorizontal, Trash2, Shield, AlertTriangle, Megaphone, Lightbulb, Clock, Image, Video, X, Play, Reply, Pencil, Check } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SocialPost } from '../store/useSocialStore';
+import { useNavigationStore } from '../store/useNavigationStore';
 import { parseAppDate, timeAgo } from '../utils/date';
 
 const CATEGORIES = [
@@ -168,7 +170,7 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
+    <div id={`post-${post.id}`} className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
       {/* Header */}
       <div className="p-4 pb-0">
         <div className="flex items-start justify-between">
@@ -596,55 +598,82 @@ const PostCard: React.FC<{ post: SocialPost; onViewProfile?: (userId: string) =>
 // ============ Main Social Page ============
 export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> = ({ onViewProfile }) => {
   const { user } = useAuthStore();
-  const { posts, addPost } = useSocialStore();
+  const { posts, postsPage, postsHasNextPage, addPost, fetchPosts } = useSocialStore();
+  const { scrollToPostId, clearScrollToPost } = useNavigationStore();
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState<'general' | 'technical' | 'safety' | 'announcement'>('general');
   const [filterCat, setFilterCat] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'popular'>('newest');
-  const [mediaFiles, setMediaFiles] = useState<string[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  // Preview URLs for display only (object URLs) — revoked on submit/remove
+  const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll to a specific post when navigated from a notification
+  useEffect(() => {
+    if (!scrollToPostId) return;
+    // Short delay to allow the tab render/sort to settle before scrolling
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`post-${scrollToPostId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Briefly highlight the post
+        el.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2'), 2000);
+      }
+      clearScrollToPost();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [scrollToPostId, clearScrollToPost]);
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     Array.from(files).forEach(file => {
-      // Limit: 10MB per file for base64 storage
       if (file.size > 10 * 1024 * 1024) {
         alert(`File "${file.name}" quá lớn (tối đa 10MB)`);
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        if (ev.target?.result) {
-          setMediaFiles(prev => [...prev, ev.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
+      // Store the raw File for upload; create an object URL for preview only
+      const previewUrl = URL.createObjectURL(file);
+      setMediaFiles(prev => [...prev, file]);
+      setMediaPreviews(prev => [...prev, previewUrl]);
     });
 
-    // Reset input so same file can be re-selected
     e.target.value = '';
   };
 
   const removeMedia = (idx: number) => {
+    // Revoke the object URL to free memory
+    URL.revokeObjectURL(mediaPreviews[idx]);
     setMediaFiles(prev => prev.filter((_, i) => i !== idx));
+    setMediaPreviews(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handlePost = () => {
+  const handlePost = async () => {
     if ((!newContent.trim() && mediaFiles.length === 0) || !user) return;
-    addPost({
-      authorId: user.id,
-      authorName: user.name,
-      authorAvatar: user.avatar,
-      authorRole: user.role,
-      content: newContent.trim(),
-      images: mediaFiles,
-      category: newCategory
-    });
-    setNewContent('');
-    setMediaFiles([]);
+    try {
+      await addPost({
+        authorId: user.id,
+        authorName: user.name,
+        authorAvatar: user.avatar,
+        authorRole: user.role,
+        content: newContent.trim(),
+        images: [],        // populated server-side after Storage upload
+        category: newCategory,
+        mediaFiles,        // raw File objects sent as multipart
+      });
+      // Revoke all preview URLs on successful post
+      mediaPreviews.forEach(url => URL.revokeObjectURL(url));
+      setNewContent('');
+      setMediaFiles([]);
+      setMediaPreviews([]);
+    } catch (error: any) {
+      toast.error(error?.message || 'Không thể đăng bài. Vui lòng thử lại.');
+    }
   };
 
   const filtered = filterCat === 'all' ? posts : posts.filter(p => p.category === filterCat);
@@ -686,12 +715,12 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
           />
         </div>
 
-        {/* Media preview */}
-        {mediaFiles.length > 0 && (
+        {/* Media preview — shows object URLs, not base64 */}
+        {mediaPreviews.length > 0 && (
           <div className="mb-3 flex gap-2 flex-wrap">
-            {mediaFiles.map((src, idx) => (
+            {mediaPreviews.map((src, idx) => (
               <div key={idx} className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-zinc-100 group">
-                {isVideoUrl(src) ? (
+                {isVideoUrl(src) || mediaFiles[idx]?.type.startsWith('video/') ? (
                   <div className="relative w-full h-full">
                     <video src={src} className="w-full h-full object-cover" muted />
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -831,6 +860,36 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
           </div>
         )}
       </div>
+
+      {/* Load More — only shown when no filter/sort changes the set and there are more pages */}
+      {postsHasNextPage && filterCat === 'all' && sortBy === 'newest' && (
+        <div className="flex justify-center mt-4 sm:mt-6">
+          <button
+            onClick={async () => {
+              setIsLoadingMore(true);
+              try {
+                await fetchPosts(postsPage + 1);
+              } finally {
+                setIsLoadingMore(false);
+              }
+            }}
+            disabled={isLoadingMore}
+            className="px-6 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 disabled:opacity-60 text-zinc-700 text-sm font-medium rounded-full shadow-sm transition-all flex items-center gap-2"
+          >
+            {isLoadingMore ? (
+              <>
+                <svg className="animate-spin w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Đang tải...
+              </>
+            ) : (
+              'Tải thêm bài viết'
+            )}
+          </button>
+        </div>
+      )}
       </div>
     </div>
   );

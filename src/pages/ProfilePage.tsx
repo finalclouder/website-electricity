@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy } from 'lucide-react';
+import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy, Trash2 } from 'lucide-react';
 import { ProfileUser, useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
@@ -39,6 +39,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
     cancelFriendRequest,
     trackDocumentDownload,
     updateDocumentStatus,
+    deleteDocument,
   } = useSocialStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
@@ -343,14 +344,25 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       </div>
     );
   }
-  if (!viewedUser && profileFetchMissed) {
+  if (profileFetchMissed) {
     return (
       <div className="flex items-center justify-center py-16 text-zinc-400">
         Không tìm thấy người dùng
       </div>
     );
   }
-  if (!profileUser) return null;
+  // If we're viewing another user and still don't have their data yet,
+  // show a spinner instead of returning null (blank/white screen).
+  if (!profileUser) {
+    if (viewingUserId && viewingUserId !== user.id) {
+      return (
+        <div className="flex items-center justify-center py-16 text-zinc-400">
+          Đang tải hồ sơ...
+        </div>
+      );
+    }
+    return null;
+  }
 
   // User stats - use profileUser's ID
   const userPosts = safePosts.filter(p => p.authorId === profileUser.id);
@@ -665,6 +677,12 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               </button>
             ) : isViewingOther ? (
               <div className="flex flex-col gap-2 items-stretch sm:items-end">
+                {/* "Đang theo dõi bạn" badge — shown when the other person follows us */}
+                {relationship?.isFollowedBy && (
+                  <span className="text-[11px] font-medium text-zinc-400 text-right">
+                    Đang theo dõi bạn
+                  </span>
+                )}
                 <button
                   onClick={handleFollowToggle}
                   disabled={isRelationshipLoading}
@@ -675,8 +693,16 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 <div className="flex gap-2">
                   <button
                     onClick={handleFriendAction}
-                    disabled={isRelationshipLoading || isFriend}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-60 ${isFriend ? 'bg-green-100 text-green-700' : incomingRequest ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20' : outgoingRequest ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-500/20'}`}
+                    disabled={isRelationshipLoading}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-60 ${
+                      isFriend
+                        ? 'bg-green-100 text-green-700'
+                        : incomingRequest
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
+                          : outgoingRequest
+                            ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                            : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-500/20'
+                    }`}
                   >
                     {isFriend ? 'Đã là bạn' : incomingRequest ? 'Chấp nhận lời mời' : outgoingRequest ? 'Hủy lời mời' : 'Kết bạn'}
                   </button>
@@ -1044,6 +1070,16 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                           <span className="hidden sm:inline">{doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}</span>
                         </button>
                       )}
+                      {(user?.role === 'admin' || doc.authorId === user?.id) && (
+                        <button
+                          onClick={() => { if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id); }}
+                          className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-500 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                          title="Xóa tài liệu"
+                        >
+                          <Trash2 size={14} />
+                          <span className="hidden sm:inline">Xóa</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1080,10 +1116,10 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                     currentDownloadHistory.map(record => (
                       <div key={record.id} className="px-4 py-3 flex items-start justify-between gap-3 hover:bg-zinc-50 transition-colors">
                         <div>
-                          <p className="text-sm font-medium text-zinc-700">{record.downloader.name || record.downloader.email}</p>
-                          <p className="text-xs text-zinc-400">{record.downloader.email}</p>
+                          <p className="text-sm font-medium text-zinc-700">{record.downloader.name || 'Người dùng'}</p>
+                          <p className="text-xs text-zinc-400">{record.downloader.bio || ''}</p>
                         </div>
-                        <span className="text-xs text-zinc-400">{timeAgo(record.createdAt)}</span>
+                        <span className="text-xs text-zinc-400 flex-shrink-0">{timeAgo(record.createdAt)}</span>
                       </div>
                     ))
                   )}

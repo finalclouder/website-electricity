@@ -295,6 +295,19 @@ router.get('/notifications/unread-count', authMiddleware, async (req, res) => {
   }
 });
 
+// IMPORTANT: 'read-all' must be registered BEFORE '/:id/read' so Express
+// does not treat the literal string "read-all" as a dynamic :id param.
+router.post('/notifications/read-all', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = (req as any).user;
+    await notificationDb.markAllAsRead(userId);
+    res.json({ message: 'Đã đánh dấu tất cả thông báo là đã đọc', count: 0 });
+  } catch (error: any) {
+    console.error('Mark all notifications read error:', error.message);
+    res.status(500).json({ error: 'Lỗi cập nhật trạng thái thông báo' });
+  }
+});
+
 router.post('/notifications/:id/read', authMiddleware, async (req, res) => {
   try {
     const { userId } = (req as any).user;
@@ -303,17 +316,6 @@ router.post('/notifications/:id/read', authMiddleware, async (req, res) => {
     res.json({ message: 'Đã đánh dấu đã đọc', count });
   } catch (error: any) {
     console.error('Mark notification read error:', error.message);
-    res.status(500).json({ error: 'Lỗi cập nhật trạng thái thông báo' });
-  }
-});
-
-router.post('/notifications/read-all', authMiddleware, async (req, res) => {
-  try {
-    const { userId } = (req as any).user;
-    await notificationDb.markAllAsRead(userId);
-    res.json({ message: 'Đã đánh dấu tất cả thông báo là đã đọc', count: 0 });
-  } catch (error: any) {
-    console.error('Mark all notifications read error:', error.message);
     res.status(500).json({ error: 'Lỗi cập nhật trạng thái thông báo' });
   }
 });

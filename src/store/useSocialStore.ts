@@ -1,7 +1,45 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { toast } from 'sonner';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuthStore } from './useAuthStore';
 import { api } from '../utils/api';
+import { supabase } from '../utils/supabaseClient';
+
+// ─── Realtime channel refs ────────────────────────────────────────────────────
+// Stored outside Zustand state (not serialisable) so unsubscribe can reach it.
+let _notificationChannel: RealtimeChannel | null = null;
+let _postsChannel: RealtimeChannel | null = null;
+
+// ─── Debounce helper ──────────────────────────────────────────────────────────
+// Returns a function that delays invoking `fn` until `wait` ms have elapsed
+// since the last call. Used so rapid realtime events (e.g. bulk likes) only
+// trigger one fetchPosts() instead of one per event.
+function debounce<T extends (...args: any[]) => void>(fn: T, wait: number): T {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return ((...args: any[]) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; fn(...args); }, wait);
+  }) as T;
+}
+
+// ─── Client-side notification message builder ─────────────────────────────────
+// Mirrors the server-side buildNotificationMessage in database.ts.
+// The raw postgres_changes payload is snake_case.
+function buildNotificationMessage(row: Record<string, any>): string {
+  const actorName = row.data_json?.actor_name ?? 'Ai đó';
+  switch (row.type as AppNotification['type']) {
+    case 'follow':              return `${actorName} đã bắt đầu theo dõi bạn`;
+    case 'friend_request':      return `${actorName} đã gửi lời mời kết bạn`;
+    case 'friend_accept':       return `${actorName} đã chấp nhận lời mời kết bạn của bạn`;
+    case 'document_download':   return `${actorName} đã tải tài liệu của bạn`;
+    case 'post_like':           return `${actorName} đã thích bài viết của bạn`;
+    case 'post_comment':        return `${actorName} đã bình luận về bài viết của bạn`;
+    case 'post_share':          return `${actorName} đã chia sẻ bài viết của bạn`;
+    case 'comment_like':        return `${actorName} đã thích bình luận của bạn`;
+    default:                    return 'Bạn có thông báo mới';
+  }
+}
 
 export interface SocialPost {
   id: string;
@@ -49,11 +87,11 @@ export interface SavedDocument {
 export interface FollowUserSummary {
   id: string;
   name: string;
-  email: string;
+  // email, role, status are intentionally omitted — backend strips these
+  // from social contexts to prevent privacy leaks (only auth endpoints
+  // expose them to owners/admins).
   avatar: string;
   bio: string;
-  role: 'admin' | 'user';
-  status: 'pending' | 'approved' | 'rejected';
   createdAt?: string;
 }
 
@@ -111,6 +149,8 @@ export interface DocumentDownloadRecord {
 
 interface SocialState {
   posts: SocialPost[];
+  postsPage: number;
+  postsHasNextPage: boolean;
   savedDocuments: SavedDocument[];
   isLoaded: boolean;
   relationshipsByUserId: Record<string, RelationshipSummary>;
@@ -123,7 +163,7 @@ interface SocialState {
   unreadNotificationCount: number;
   documentDownloadsByDocumentId: Record<string, DocumentDownloadRecord[]>;
 
-  fetchPosts: () => Promise<void>;
+  fetchPosts: (page?: number) => Promise<void>;
   fetchDocuments: () => Promise<void>;
   fetchRelationship: (userId: string) => Promise<void>;
   fetchFollowers: (userId: string) => Promise<void>;
@@ -134,7 +174,7 @@ interface SocialState {
   fetchUnreadNotificationCount: () => Promise<void>;
   fetchDocumentDownloads: (documentId: string) => Promise<void>;
 
-  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'sharedBy' | 'createdAt'>) => Promise<void>;
+  addPost: (post: Omit<SocialPost, 'id' | 'likes' | 'comments' | 'shares' | 'sharedBy' | 'createdAt'> & { mediaFiles?: File[] }) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   toggleLike: (postId: string, userId: string) => Promise<void>;
   addComment: (postId: string, comment: Omit<SocialComment, 'id' | 'createdAt' | 'likes'>) => Promise<void>;
@@ -150,6 +190,10 @@ interface SocialState {
   cancelFriendRequest: (requestId: string) => Promise<{ ok: boolean; error?: string }>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  subscribeToNotifications: (userId: string) => void;
+  unsubscribeFromNotifications: () => void;
+  subscribeToPosts: () => void;
+  unsubscribeFromPosts: () => void;
   resetSocialState: () => void;
 
   saveDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
@@ -163,6 +207,8 @@ export const useSocialStore = create<SocialState>()(
   persist(
     (set, get) => ({
       posts: [],
+      postsPage: 1,
+      postsHasNextPage: false,
       savedDocuments: [],
       isLoaded: false,
       relationshipsByUserId: {},
@@ -175,10 +221,15 @@ export const useSocialStore = create<SocialState>()(
       unreadNotificationCount: 0,
       documentDownloadsByDocumentId: {},
 
-      fetchPosts: async () => {
+      fetchPosts: async (page = 1) => {
         try {
-          const posts = await api.get<SocialPost[]>('/posts');
-          set({ posts, isLoaded: true });
+          const result = await api.get<{ data: SocialPost[]; total: number; hasNextPage: boolean }>(`/posts?page=${page}&limit=20`);
+          set(state => ({
+            posts: page === 1 ? result.data : [...state.posts, ...result.data],
+            postsPage: page,
+            postsHasNextPage: result.hasNextPage,
+            isLoaded: true,
+          }));
         } catch (error) {
           console.error('Fetch posts error:', error);
         }
@@ -294,15 +345,21 @@ export const useSocialStore = create<SocialState>()(
 
       addPost: async (post) => {
         try {
-          const posts = await api.post<SocialPost[]>('/posts', {
-            content: post.content,
-            images: post.images,
-            attachmentName: post.attachmentName,
-            category: post.category,
-          });
-          set({ posts });
+          // Build multipart/form-data — backend uploads files to Supabase Storage
+          // and returns permanent URLs. No base64 strings touch the database.
+          const form = new FormData();
+          form.append('content', post.content);
+          form.append('category', post.category);
+          if (post.attachmentName) form.append('attachmentName', post.attachmentName);
+          // Append each File object under the 'media' field name
+          for (const file of post.mediaFiles ?? []) {
+            form.append('media', file);
+          }
+          const posts = await api.post<{ data: SocialPost[]; total: number; hasNextPage: boolean }>('/posts', form);
+          set({ posts: posts.data, postsPage: 1, postsHasNextPage: posts.hasNextPage });
         } catch (error) {
           console.error('Add post error:', error);
+          throw error; // re-throw so the caller can show error feedback
         }
       },
 
@@ -551,9 +608,108 @@ export const useSocialStore = create<SocialState>()(
         }
       },
 
+      subscribeToNotifications: (userId) => {
+        // Tear down any previous channel before opening a new one
+        if (_notificationChannel) {
+          supabase.removeChannel(_notificationChannel);
+          _notificationChannel = null;
+        }
+
+        _notificationChannel = supabase
+          .channel(`notifications:${userId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${userId}`,
+            },
+            (payload) => {
+              const row = payload.new as Record<string, any>;
+
+              // Build the AppNotification shape from the raw DB row
+              const notification: AppNotification = {
+                id: row.id,
+                userId: row.user_id,
+                actorId: row.actor_id ?? null,
+                actor: null, // actor enrichment not available in realtime payload
+                type: row.type,
+                entityType: row.entity_type,
+                entityId: row.entity_id,
+                dataJson: row.data_json ?? {},
+                isRead: false,
+                createdAt: row.created_at,
+                message: buildNotificationMessage(row),
+              };
+
+              // Prepend to notifications list and bump unread count
+              set((state) => ({
+                notifications: [notification, ...state.notifications],
+                unreadNotificationCount: state.unreadNotificationCount + 1,
+              }));
+
+              // Show a toast
+              toast(notification.message, {
+                duration: 4000,
+              });
+            }
+          )
+          .subscribe((status) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error('[Realtime] Notification channel error — will retry on next login');
+            }
+          });
+      },
+
+      unsubscribeFromNotifications: () => {
+        if (_notificationChannel) {
+          supabase.removeChannel(_notificationChannel);
+          _notificationChannel = null;
+        }
+      },
+
+      subscribeToPosts: () => {
+        if (_postsChannel) {
+          supabase.removeChannel(_postsChannel);
+          _postsChannel = null;
+        }
+
+        // Debounced refetch — collapses rapid bursts (e.g. multiple likes at once)
+        // into a single API call 400 ms after the last event.
+        const debouncedFetch = debounce(() => {
+          useSocialStore.getState().fetchPosts(1);
+        }, 400);
+
+        _postsChannel = supabase
+          .channel('social-feed')
+          // Any post inserted, updated, or deleted
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, debouncedFetch)
+          // Any comment added, edited, or deleted
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, debouncedFetch)
+          // Any like toggled (post or comment)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, debouncedFetch)
+          // Any share recorded
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'shares' }, debouncedFetch)
+          .subscribe((status) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error('[Realtime] Posts channel error');
+            }
+          });
+      },
+
+      unsubscribeFromPosts: () => {
+        if (_postsChannel) {
+          supabase.removeChannel(_postsChannel);
+          _postsChannel = null;
+        }
+      },
+
       resetSocialState: () => {
         set({
           posts: [],
+          postsPage: 1,
+          postsHasNextPage: false,
           savedDocuments: [],
           isLoaded: false,
           relationshipsByUserId: {},
@@ -641,10 +797,10 @@ export const useSocialStore = create<SocialState>()(
     }),
     {
       name: 'patctc-social',
-      partialize: (state) => ({
-        posts: state.posts,
-        savedDocuments: state.savedDocuments,
-      }),
+      // Do NOT persist posts or savedDocuments — they contain sensitive server
+      // data (including full dataSnapshot payloads) that must not survive
+      // across sessions. All data is re-fetched fresh on login.
+      partialize: () => ({}),
     }
   )
 );

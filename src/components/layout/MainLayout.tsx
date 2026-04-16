@@ -1,7 +1,8 @@
 import React from 'react';
-import { Bell, FileText, LogOut, Settings, User, Users, FolderOpen } from 'lucide-react';
+import { Bell, FileText, LogOut, Settings, User, Users, FolderOpen, UserCheck, X } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useSocialStore } from '../../store/useSocialStore';
+import { useNavigationStore } from '../../store/useNavigationStore';
 import { timeAgo } from '../../utils/date';
 
 interface MainLayoutProps {
@@ -20,13 +21,18 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
   const {
     notifications,
     unreadNotificationCount,
+    incomingFriendRequests,
     fetchNotifications,
     fetchUnreadNotificationCount,
     markNotificationRead,
     markAllNotificationsRead,
+    acceptFriendRequest,
+    rejectFriendRequest,
   } = useSocialStore();
+  const { viewUserProfile, navigateToTab, navigateToPost } = useNavigationStore();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
   const [showNotificationMenu, setShowNotificationMenu] = React.useState(false);
+  const [friendActionLoading, setFriendActionLoading] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!showNotificationMenu) return;
@@ -43,6 +49,68 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
   const safeNotifications = Array.isArray(notifications) ? notifications : [];
   const safeUnreadNotificationCount = typeof unreadNotificationCount === 'number' ? unreadNotificationCount : 0;
   const recentNotifications = safeNotifications.slice(0, 8);
+
+  /** Navigate to the relevant entity when a notification row is clicked */
+  function handleNotificationClick(notification: (typeof safeNotifications)[number]) {
+    if (!notification.isRead) {
+      markNotificationRead(notification.id);
+    }
+    setShowNotificationMenu(false);
+
+    switch (notification.type) {
+      case 'follow':
+      case 'friend_accept':
+        // Go to the actor's profile
+        if (notification.actorId) {
+          viewUserProfile(notification.actorId);
+        }
+        break;
+      case 'friend_request':
+        // Go to sender's profile so they can accept right there too
+        if (notification.actorId) {
+          viewUserProfile(notification.actorId);
+        }
+        break;
+      case 'post_like':
+      case 'post_comment':
+      case 'post_share':
+      case 'comment_like':
+        // Navigate to social tab and scroll to the specific post
+        navigateToPost(notification.entityId);
+        break;
+      case 'document_download':
+        navigateToTab('documents');
+        break;
+      default:
+        break;
+    }
+  }
+
+  async function handleAcceptFromNotification(notification: (typeof safeNotifications)[number]) {
+    if (!notification.actorId) return;
+    const request = incomingFriendRequests.find(r => r.senderId === notification.actorId);
+    if (!request) return;
+    setFriendActionLoading(notification.id);
+    try {
+      await acceptFriendRequest(request.id);
+      markNotificationRead(notification.id);
+    } finally {
+      setFriendActionLoading(null);
+    }
+  }
+
+  async function handleRejectFromNotification(notification: (typeof safeNotifications)[number]) {
+    if (!notification.actorId) return;
+    const request = incomingFriendRequests.find(r => r.senderId === notification.actorId);
+    if (!request) return;
+    setFriendActionLoading(notification.id + '_reject');
+    try {
+      await rejectFriendRequest(request.id);
+      markNotificationRead(notification.id);
+    } finally {
+      setFriendActionLoading(null);
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col bg-zinc-100 overflow-hidden">
@@ -112,34 +180,61 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
                     </button>
                   </div>
 
-                  <div className="max-h-[420px] overflow-y-auto">
+                  <div className="max-h-[480px] overflow-y-auto">
                     {recentNotifications.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-zinc-400">
                         Chưa có thông báo nào
                       </div>
                     ) : (
-                      recentNotifications.map(notification => (
-                        <div
-                          key={notification.id}
-                          className={`px-4 py-3 border-b border-zinc-50 last:border-b-0 ${notification.isRead ? 'bg-white' : 'bg-blue-50/50'}`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notification.isRead ? 'bg-zinc-200' : 'bg-blue-500'}`} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-zinc-700 leading-5">{notification.message}</p>
-                              <p className="text-[11px] text-zinc-400 mt-1">{timeAgo(notification.createdAt)}</p>
-                            </div>
-                            {!notification.isRead && (
-                              <button
-                                onClick={() => markNotificationRead(notification.id)}
-                                className="text-[11px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap"
-                              >
-                                Đã đọc
-                              </button>
+                      recentNotifications.map(notification => {
+                        const isFriendRequest = notification.type === 'friend_request';
+                        const hasPendingRequest = isFriendRequest && notification.actorId
+                          ? incomingFriendRequests.some(r => r.senderId === notification.actorId)
+                          : false;
+                        const isLoadingAccept = friendActionLoading === notification.id;
+                        const isLoadingReject = friendActionLoading === notification.id + '_reject';
+
+                        return (
+                          <div
+                            key={notification.id}
+                            className={`px-4 py-3 border-b border-zinc-50 last:border-b-0 ${notification.isRead ? 'bg-white' : 'bg-blue-50/50'}`}
+                          >
+                            {/* Clickable row — navigates to the relevant entity */}
+                            <button
+                              className="flex items-start gap-3 w-full text-left hover:opacity-80 transition-opacity"
+                              onClick={() => handleNotificationClick(notification)}
+                            >
+                              <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${notification.isRead ? 'bg-zinc-200' : 'bg-blue-500'}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-zinc-700 leading-5">{notification.message || 'Bạn có một thông báo mới'}</p>
+                                <p className="text-[11px] text-zinc-400 mt-0.5">{timeAgo(notification.createdAt)}</p>
+                              </div>
+                            </button>
+
+                            {/* Inline accept/reject for pending friend requests */}
+                            {hasPendingRequest && (
+                              <div className="flex gap-2 mt-2 ml-5">
+                                <button
+                                  onClick={() => handleAcceptFromNotification(notification)}
+                                  disabled={isLoadingAccept || isLoadingReject}
+                                  className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-60"
+                                >
+                                  <UserCheck size={12} />
+                                  {isLoadingAccept ? 'Đang xử lý...' : 'Chấp nhận'}
+                                </button>
+                                <button
+                                  onClick={() => handleRejectFromNotification(notification)}
+                                  disabled={isLoadingAccept || isLoadingReject}
+                                  className="flex items-center gap-1 px-3 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 text-xs font-medium rounded-lg transition-colors disabled:opacity-60"
+                                >
+                                  <X size={12} />
+                                  {isLoadingReject ? 'Đang xử lý...' : 'Từ chối'}
+                                </button>
+                              </div>
                             )}
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>

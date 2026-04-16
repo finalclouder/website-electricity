@@ -45,6 +45,37 @@ function safeJsonParse(value: any, fallback: any = []): any {
   }
 }
 
+// ── Supabase Storage helpers ──────────────────────────────────────────────────
+const STORAGE_BUCKET = 'uploads';
+
+/**
+ * Upload a file buffer to Supabase Storage and return its permanent public URL.
+ * Path format: posts/<uuid>/<originalname>
+ * Bucket must be set to "Public" in the Supabase dashboard.
+ */
+export async function uploadFileToStorage(
+  buffer: Buffer,
+  mimeType: string,
+  fileName: string,
+  folder: string = 'posts'
+): Promise<string> {
+  const client = getSupabase();
+  // Sanitize extension: strip path separators and non-alphanumeric chars
+  // to prevent path traversal via crafted filenames like "file./../../../x"
+  const rawExt = (fileName.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+  const ext = rawExt || 'bin';
+  const storagePath = `${folder}/${crypto.randomUUID()}.${ext}`;
+
+  const { error } = await client.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, buffer, { contentType: mimeType, upsert: false });
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+
+  const { data } = client.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
 function toIsoNow() {
   return new Date().toISOString();
 }
@@ -118,7 +149,21 @@ async function fetchUsersMap(userIds: string[]) {
   return new Map((data || []).map(user => [user.id, user]));
 }
 
+// PUBLIC summary — safe to expose in social contexts (followers, friends, etc.)
+// Does NOT include email, role, or status to prevent privacy leaks.
 function toUserSummary(user: any) {
+  return {
+    id: user.id,
+    name: user.name || '',
+    avatar: user.avatar || '',
+    bio: user.bio || '',
+    createdAt: user.created_at,
+  };
+}
+
+// INTERNAL summary — includes sensitive fields. Only use in admin/auth contexts
+// where the caller has already verified the requester is owner or admin.
+function toFullUserSummary(user: any) {
   return {
     id: user.id,
     name: user.name || '',
@@ -411,6 +456,7 @@ export const userDb = {
   async delete(id: string) {
     const client = getSupabase();
 
+    // ── Step 1: Clean up likes attached to this user's posts & comments ──
     const { data: userPosts, error: postsError } = await client
       .from('posts')
       .select('id')
@@ -437,9 +483,82 @@ export const userDb = {
 
     await deleteLikesByTargetIds('comment', maybeArray(userComments).map(comment => comment.id));
 
+    // ── Step 2: Delete own likes, shares ──
     const { error: deleteOwnLikesError } = await client.from('likes').delete().eq('user_id', id);
     if (deleteOwnLikesError) throw deleteOwnLikesError;
 
+    const { error: deleteSharesError } = await client.from('shares').delete().eq('user_id', id);
+    if (deleteSharesError) throw deleteSharesError;
+
+    // ── Step 3: Delete own comments (replies first via parent_id, then top-level) ──
+    const { data: ownComments, error: ownCommentsError } = await client
+      .from('comments')
+      .select('id')
+      .eq('author_id', id);
+    if (ownCommentsError) throw ownCommentsError;
+    const ownCommentIds = maybeArray(ownComments).map(c => c.id);
+    if (ownCommentIds.length > 0) {
+      // Delete replies to user's comments first (already done above via deleteLikesByTargetIds),
+      // then delete the comments themselves.
+      await deleteCommentsByParentIds(ownCommentIds);
+      const { error: deleteOwnCommentsError } = await client
+        .from('comments').delete().in('id', ownCommentIds);
+      if (deleteOwnCommentsError) throw deleteOwnCommentsError;
+    }
+
+    // ── Step 4: Delete user's posts (and their comments cascade or handle manually) ──
+    if (postIds.length > 0) {
+      // Delete all comments on user's posts
+      const { error: deletePostCommentsError } = await client
+        .from('comments').delete().in('post_id', postIds);
+      if (deletePostCommentsError) throw deletePostCommentsError;
+
+      const { error: deletePostsError } = await client
+        .from('posts').delete().in('id', postIds);
+      if (deletePostsError) throw deletePostsError;
+    }
+
+    // ── Step 5: Clean up social graph ──
+    const { error: deleteFollowsError } = await client
+      .from('user_follows')
+      .delete()
+      .or(`follower_id.eq.${id},following_id.eq.${id}`);
+    if (deleteFollowsError && !isMissingTableError(deleteFollowsError, 'user_follows')) {
+      throw deleteFollowsError;
+    }
+
+    const { error: deleteFriendRequestsError } = await client
+      .from('friend_requests')
+      .delete()
+      .or(`sender_id.eq.${id},receiver_id.eq.${id}`);
+    if (deleteFriendRequestsError && !isMissingTableError(deleteFriendRequestsError, 'friend_requests')) {
+      throw deleteFriendRequestsError;
+    }
+
+    // ── Step 6: Delete notifications (as recipient or actor) ──
+    const { error: deleteNotifError } = await client
+      .from('notifications')
+      .delete()
+      .or(`user_id.eq.${id},actor_id.eq.${id}`);
+    if (deleteNotifError && !isMissingTableError(deleteNotifError, 'notifications')) {
+      throw deleteNotifError;
+    }
+
+    // ── Step 7: Delete document_downloads records referencing this user ──
+    const { error: deleteDownloadsError } = await client
+      .from('document_downloads')
+      .delete()
+      .or(`downloader_id.eq.${id},owner_id.eq.${id}`);
+    if (deleteDownloadsError && !isMissingTableError(deleteDownloadsError, 'document_downloads')) {
+      throw deleteDownloadsError;
+    }
+
+    // ── Step 8: Delete user's documents ──
+    const { error: deleteDocsError } = await client
+      .from('documents').delete().eq('author_id', id);
+    if (deleteDocsError) throw deleteDocsError;
+
+    // ── Step 9: Delete the user record itself ──
     const { error: deleteUserError } = await client.from('users').delete().eq('id', id);
     if (deleteUserError) throw deleteUserError;
   },
@@ -523,6 +642,70 @@ export const postDb = {
         comments: commentsByPostId.get(post.id) || [],
       };
     });
+  },
+
+  // Paginated version — returns { data, total, hasNextPage }
+  async getPaginated(page: number = 1, limit: number = 20) {
+    const client = getSupabase();
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data: posts, error: postsError, count } = await client
+      .from('posts')
+      .select('id, author_id, content, images, attachment_name, category, shares, created_at', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (postsError) throw postsError;
+
+    const postRows = posts || [];
+    const total = count ?? 0;
+
+    if (postRows.length === 0) {
+      return { data: [], total, hasNextPage: false };
+    }
+
+    const postIds = postRows.map(post => post.id);
+    const authors = await fetchUsersMap(postRows.map(post => post.author_id));
+
+    const { data: postLikes, error: postLikesError } = await client
+      .from('likes')
+      .select('user_id, target_id')
+      .eq('target_type', 'post')
+      .in('target_id', postIds);
+    if (postLikesError) throw postLikesError;
+
+    const { data: shares, error: sharesError } = await client
+      .from('shares')
+      .select('user_id, post_id')
+      .in('post_id', postIds);
+    if (sharesError) throw sharesError;
+
+    const postLikesById = groupValuesBy(postLikes || [], 'target_id', row => row.user_id);
+    const sharedByPostId = groupValuesBy(shares || [], 'post_id', row => row.user_id);
+    const commentsByPostId = await buildCommentsForPosts(postIds);
+
+    const data = postRows.map(post => {
+      const author = authors.get(post.author_id);
+      return {
+        id: post.id,
+        authorId: post.author_id,
+        authorName: author?.name || '',
+        authorAvatar: author?.avatar || '',
+        authorRole: author?.role || 'user',
+        content: post.content,
+        images: safeJsonParse(post.images, []),
+        attachmentName: post.attachment_name || '',
+        category: post.category,
+        shares: post.shares,
+        createdAt: post.created_at,
+        likes: postLikesById.get(post.id) || [],
+        sharedBy: sharedByPostId.get(post.id) || [],
+        comments: commentsByPostId.get(post.id) || [],
+      };
+    });
+
+    return { data, total, hasNextPage: from + postRows.length < total };
   },
 
   async findById(id: string) {
@@ -739,6 +922,47 @@ export const docDb = {
     }));
   },
 
+  // Paginated version — returns { data, total, hasNextPage }
+  async getPaginated(page: number = 1, limit: number = 20) {
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data: docs, error, count } = await getSupabase()
+      .from('documents')
+      .select('id, title, description, author_id, data_snapshot, status, tags, created_at, updated_at', { count: 'exact' })
+      .in('status', ['completed', 'approved']) // public documents only
+      .order('updated_at', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const docRows = docs || [];
+    const total = count ?? 0;
+
+    if (docRows.length === 0) {
+      return { data: [], total, hasNextPage: false };
+    }
+
+    const authors = await fetchUsersMap(docRows.map(doc => doc.author_id));
+    const downloadCounts = await getDocumentDownloadCounts(docRows.map(doc => doc.id));
+
+    const data = docRows.map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      description: doc.description,
+      authorId: doc.author_id,
+      authorName: authors.get(doc.author_id)?.name || '',
+      dataSnapshot: doc.data_snapshot,
+      status: doc.status,
+      tags: safeJsonParse(doc.tags, []),
+      createdAt: doc.created_at,
+      updatedAt: doc.updated_at,
+      downloadCount: downloadCounts.get(doc.id) || 0,
+    }));
+
+    return { data, total, hasNextPage: from + docRows.length < total };
+  },
+
   async findById(id: string) {
     const { data: doc, error } = await getSupabase()
       .from('documents')
@@ -816,13 +1040,9 @@ export const docDb = {
 
   async delete(id: string) {
     const client = getSupabase();
-
-    const { error: deleteDownloadsError } = await client
-      .from('document_downloads')
-      .delete()
-      .eq('document_id', id);
-    if (deleteDownloadsError) throw deleteDownloadsError;
-
+    // NOTE: document_downloads rows are cleaned up automatically by the
+    // ON DELETE CASCADE foreign key on document_downloads.document_id.
+    // No manual pre-deletion is needed here.
     const { error } = await client.from('documents').delete().eq('id', id);
     if (error) throw error;
   },

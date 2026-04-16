@@ -319,15 +319,17 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                       <CheckCircle2 size={16} />
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id);
-                    }}
-                    className="p-2 hover:bg-red-50 rounded-lg text-zinc-400 hover:text-red-500 transition-colors"
-                    title="Xóa"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {(user?.role === 'admin' || doc.authorId === user?.id) && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id);
+                      }}
+                      className="p-2 hover:bg-red-50 rounded-lg text-zinc-400 hover:text-red-500 transition-colors"
+                      title="Xóa"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

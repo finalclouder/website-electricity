@@ -171,16 +171,32 @@ export const useAuthStore = create<AuthState>()(
 
       updateProfile: async (updates) => {
         try {
-          const payload = {
-            ...updates,
-            ...(updates.email !== undefined ? { email: updates.email } : {}),
-          };
+          const payload = { ...updates };
           const data = await api.put<{ token: string; user: User }>('/auth/profile', payload);
           set(state => ({
             token: data.token,
             user: data.user,
             cachedUsers: upsertCachedUser(state.cachedUsers, data.user),
           }));
+          // Explicitly flush the new token to localStorage immediately so that
+          // getAuthToken() reads the correct value on the very next request and
+          // the new email/token persists across a full page reload (F5).
+          try {
+            const stored = localStorage.getItem('patctc-auth');
+            const parsed = stored ? JSON.parse(stored) : {};
+            const next = {
+              ...parsed,
+              state: {
+                ...(parsed?.state ?? {}),
+                token: data.token,
+                user: data.user,
+                isAuthenticated: true,
+              },
+            };
+            localStorage.setItem('patctc-auth', JSON.stringify(next));
+          } catch (lsErr) {
+            console.warn('Could not flush token to localStorage:', lsErr);
+          }
           return { ok: true };
         } catch (error: any) {
           console.error('Update profile error:', error.message);

@@ -3,31 +3,80 @@
  */
 import { Router } from 'express';
 import crypto from 'crypto';
-import { notificationDb, postDb } from '../../database.js';
+import multer from 'multer';
+import { notificationDb, postDb, uploadFileToStorage } from '../../database.js';
 import { authMiddleware } from './authMiddleware.js';
+import { scanContentForThreats } from './urlSafety.js';
 
 const router = Router();
 
-// GET /api/posts - Get all posts (requires auth)
+// ─── Magic bytes validation ─────────────────────────────────────────────────
+// Multer only checks the Content-Type header (attacker-controlled).
+// This validates actual file content by checking magic bytes (file signature).
+const MAGIC_BYTES: Record<string, number[][]> = {
+  'image/jpeg': [[0xFF, 0xD8, 0xFF]],
+  'image/png':  [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
+  'image/gif':  [[0x47, 0x49, 0x46, 0x38, 0x37, 0x61], [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]], // GIF87a, GIF89a
+  'image/webp': [[0x52, 0x49, 0x46, 0x46]], // RIFF (WebP container)
+  'video/mp4':  [], // mp4 magic varies (ftyp at offset 4) — validated separately
+  'video/webm': [[0x1A, 0x45, 0xDF, 0xA3]], // EBML header
+};
+
+function validateMagicBytes(buffer: Buffer, declaredMime: string): boolean {
+  if (buffer.length < 4) return false;
+
+  // Special case: MP4 — "ftyp" at offset 4
+  if (declaredMime === 'video/mp4') {
+    return buffer.length >= 8 && buffer.slice(4, 8).toString('ascii') === 'ftyp';
+  }
+
+  const signatures = MAGIC_BYTES[declaredMime];
+  if (!signatures || signatures.length === 0) return true; // No signature to check
+
+  return signatures.some(sig =>
+    sig.every((byte, i) => buffer[i] === byte)
+  );
+}
+
+// Multer: memory storage — files arrive as Buffer in req.files
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB per file
+    files: 10,                   // max 10 files per post
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Loại file không được hỗ trợ: ${file.mimetype}`));
+    }
+  },
+});
+
+// GET /api/posts - Get paginated posts (requires auth)
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const posts = await postDb.getAll();
-    res.json(posts);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const result = await postDb.getPaginated(page, limit);
+    res.json(result);
   } catch (error: any) {
     console.error('Get posts error:', error.message);
     res.status(500).json({ error: 'Lỗi tải bài viết' });
   }
 });
 
-// POST /api/posts - Create post
-router.post('/', authMiddleware, async (req, res) => {
+// POST /api/posts - Create post (multipart/form-data with optional media files)
+router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res) => {
   try {
     const { userId } = (req as any).user;
-    const { content, images, attachmentName, category } = req.body;
+    const { content, attachmentName, category } = req.body;
     const normalizedContent = content?.trim() || '';
-    const normalizedImages = Array.isArray(images) ? images : [];
+    const files = (req.files as Express.Multer.File[]) || [];
 
-    if (!normalizedContent && normalizedImages.length === 0) {
+    if (!normalizedContent && files.length === 0) {
       return res.status(400).json({ error: 'Nội dung hoặc media không được để trống' });
     }
 
@@ -35,13 +84,44 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Nội dung quá dài (tối đa 10000 ký tự)' });
     }
 
-    if (images && (!Array.isArray(images) || images.length > 10)) {
-      return res.status(400).json({ error: 'Danh sách ảnh không hợp lệ (tối đa 10 ảnh)' });
-    }
-
     const validCategories = ['general', 'technical', 'safety', 'announcement'];
     if (category && !validCategories.includes(category)) {
       return res.status(400).json({ error: 'Danh mục không hợp lệ' });
+    }
+
+    // ── Magic bytes validation ─────────────────────────────────────────────
+    // Multer only checks Content-Type header (attacker-controlled).
+    // This validates actual file content to prevent smuggling attacks
+    // (e.g. PHP payload sent as image/jpeg).
+    for (const file of files) {
+      if (!validateMagicBytes(file.buffer, file.mimetype)) {
+        return res.status(400).json({
+          error: `File "${file.originalname}" không phải là ${file.mimetype} hợp lệ. Nội dung file không khớp với loại khai báo.`,
+        });
+      }
+    }
+
+    // ── URL Safety Scan ─────────────────────────────────────────────────
+    // Check for malicious links BEFORE uploading files or saving to DB.
+    if (normalizedContent) {
+      const scanResult = await scanContentForThreats(normalizedContent);
+      if (scanResult.isMalicious) {
+        return res.status(400).json({
+          error: 'Bài viết chứa liên kết không an toàn hoặc độc hại. Vui lòng kiểm tra lại.',
+        });
+      }
+    }
+
+    // Upload each file to Supabase Storage and collect public URLs
+    const imageUrls: string[] = [];
+    for (const file of files) {
+      const url = await uploadFileToStorage(
+        file.buffer,
+        file.mimetype,
+        file.originalname,
+        'posts'
+      );
+      imageUrls.push(url);
     }
 
     const id = crypto.randomUUID();
@@ -49,15 +129,19 @@ router.post('/', authMiddleware, async (req, res) => {
       id,
       authorId: userId,
       content: normalizedContent,
-      images: normalizedImages,
+      images: imageUrls,        // ← permanent Storage URLs, not base64
       attachmentName: attachmentName || '',
       category: category || 'general',
     });
 
-    const posts = await postDb.getAll();
-    res.json(posts);
+    const result = await postDb.getPaginated(1, 20);
+    res.json(result);
   } catch (error: any) {
     console.error('Create post error:', error.message);
+    // Multer errors (file too large, wrong type) arrive as error.status
+    if (error.message?.includes('Loại file') || error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: error.message || 'File quá lớn (tối đa 10MB mỗi file)' });
+    }
     res.status(500).json({ error: 'Lỗi tạo bài viết' });
   }
 });
