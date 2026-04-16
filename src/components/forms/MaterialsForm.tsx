@@ -64,7 +64,7 @@ export const MaterialsForm: React.FC = () => {
             {expandedId === item.id && (
               <div className="px-3 pb-3 space-y-3 border-t border-zinc-100 pt-3">
                 <Input label="Tên vật tư" value={item.name} onChange={e => updateMaterial(item.id!, { name: e.target.value })} />
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <Input label="Nước SX" value={item.origin} onChange={e => updateMaterial(item.id!, { origin: e.target.value })} />
                   <Input label="Đơn vị" value={item.unit} onChange={e => updateMaterial(item.id!, { unit: e.target.value })} />
                   <Input label="Số lượng" value={item.quantity} onChange={e => updateMaterial(item.id!, { quantity: e.target.value })} />

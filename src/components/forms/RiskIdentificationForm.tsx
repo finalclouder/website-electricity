@@ -139,35 +139,67 @@ export const RiskIdentificationForm: React.FC = () => {
         {/* Thời gian dự kiến */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Thời gian dự kiến</div>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Input
               label="Giờ"
               type="number"
               min={0}
               max={23}
-              value={data.tg_gio}
-              onChange={e => updateData({ tg_gio: parseInt(e.target.value) || 0 })}
+              value={data.tg_gio ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ tg_gio: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.tg_gio === '' || data.tg_gio === undefined || isNaN(Number(data.tg_gio))) {
+                  updateData({ tg_gio: 0 });
+                }
+              }}
             />
             <Input
               label="Số ngày"
               type="number"
               min={1}
-              value={data.tg_soNgay}
-              onChange={e => updateData({ tg_soNgay: parseInt(e.target.value) || 1 })}
+              value={data.tg_soNgay ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ tg_soNgay: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.tg_soNgay === '' || data.tg_soNgay === undefined || isNaN(Number(data.tg_soNgay))) {
+                  updateData({ tg_soNgay: 1 });
+                }
+              }}
             />
             <Input
               label="Tháng"
               type="number"
               min={1}
               max={12}
-              value={data.tg_thang}
-              onChange={e => updateData({ tg_thang: parseInt(e.target.value) || 1 })}
+              value={data.tg_thang ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ tg_thang: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.tg_thang === '' || data.tg_thang === undefined || isNaN(Number(data.tg_thang))) {
+                  updateData({ tg_thang: 1 });
+                }
+              }}
             />
             <Input
               label="Năm"
               type="number"
-              value={data.tg_nam}
-              onChange={e => updateData({ tg_nam: parseInt(e.target.value) || 2027 })}
+              value={data.tg_nam ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ tg_nam: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.tg_nam === '' || data.tg_nam === undefined || isNaN(Number(data.tg_nam))) {
+                  updateData({ tg_nam: new Date().getFullYear() });
+                }
+              }}
             />
           </div>
         </div>

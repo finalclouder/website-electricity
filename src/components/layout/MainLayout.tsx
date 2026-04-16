@@ -165,7 +165,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
             {showNotificationMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowNotificationMenu(false)} />
-                <div className="absolute right-0 top-12 bg-white border border-zinc-200 rounded-2xl shadow-xl z-50 w-[320px] sm:w-[360px] overflow-hidden">
+                <div className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-14 sm:top-12 bg-white border border-zinc-200 rounded-2xl shadow-xl z-50 sm:w-[360px] overflow-hidden">
                   <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-800">Thông báo</div>

@@ -102,7 +102,20 @@ export const PersonnelForm: React.FC = () => {
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="Năm sinh" type="number" value={person.birthYear} onChange={e => updatePerson(person.id, { birthYear: parseInt(e.target.value) || 1990 })} />
+                  <Input
+                    label="Năm sinh"
+                    type="number"
+                    value={person.birthYear ?? ''}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      updatePerson(person.id, { birthYear: raw === '' ? ('' as any) : parseInt(raw) });
+                    }}
+                    onBlur={() => {
+                      if (person.birthYear === '' || person.birthYear === undefined || isNaN(Number(person.birthYear))) {
+                        updatePerson(person.id, { birthYear: 1990 });
+                      }
+                    }}
+                  />
                   <Select
                     label="Vai trò"
                     value={person.role}

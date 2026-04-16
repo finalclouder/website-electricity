@@ -66,16 +66,32 @@ export const SiteSurveySection: React.FC = () => {
               type="number"
               min={0}
               max={23}
-              value={data.ks_gio}
-              onChange={e => updateData({ ks_gio: parseInt(e.target.value) || 0 })}
+              value={data.ks_gio ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ ks_gio: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.ks_gio === '' || data.ks_gio === undefined || isNaN(Number(data.ks_gio))) {
+                  updateData({ ks_gio: 0 });
+                }
+              }}
             />
             <Input
               label="Phút (0-59)"
               type="number"
               min={0}
               max={59}
-              value={data.ks_phut}
-              onChange={e => updateData({ ks_phut: parseInt(e.target.value) || 0 })}
+              value={data.ks_phut ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                updateData({ ks_phut: raw === '' ? ('' as any) : parseInt(raw) });
+              }}
+              onBlur={() => {
+                if (data.ks_phut === '' || data.ks_phut === undefined || isNaN(Number(data.ks_phut))) {
+                  updateData({ ks_phut: 0 });
+                }
+              }}
             />
           </div>
           <div className="p-3 bg-zinc-50 rounded-lg text-xs text-zinc-500 italic">

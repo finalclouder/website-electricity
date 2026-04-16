@@ -95,7 +95,7 @@ export const ConstructionSequenceForm: React.FC = () => {
             <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
               <button
                 onClick={() => removeBocCachDien(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
               >
                 <Trash2 size={12} />
               </button>
@@ -136,7 +136,7 @@ export const ConstructionSequenceForm: React.FC = () => {
             <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
               <button
                 onClick={() => removeDieuKhienGau(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
               >
                 <Trash2 size={12} />
               </button>
@@ -177,7 +177,7 @@ export const ConstructionSequenceForm: React.FC = () => {
             <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
               <button
                 onClick={() => removeThaoBocCachDien(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
               >
                 <Trash2 size={12} />
               </button>

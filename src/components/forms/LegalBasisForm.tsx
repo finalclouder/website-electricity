@@ -43,7 +43,7 @@ export const LegalBasisForm: React.FC = () => {
         {/* Mục 10 */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Mục 10: Biên bản khảo sát hiện trường</div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <Input
               label="Ngày"
               type="number"

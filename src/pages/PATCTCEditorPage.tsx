@@ -333,7 +333,7 @@ export const PATCTCEditorPage: React.FC = () => {
   return (
     <div className="flex h-full overflow-hidden flex-col sm:flex-row">
       {/* === Sidebar === */}
-      <div className="w-full sm:w-[450px] flex-shrink-0 bg-white border-b sm:border-b-0 sm:border-r border-zinc-200 flex flex-col h-full">
+      <div className="w-full sm:w-[450px] flex-shrink-0 bg-white border-b sm:border-b-0 sm:border-r border-zinc-200 flex flex-col h-full overflow-hidden">
         {/* Documents Panel Toggle */}
         <button
           onClick={() => setShowDocsPanel(!showDocsPanel)}
@@ -404,7 +404,7 @@ export const PATCTCEditorPage: React.FC = () => {
                           </button>
                           <button
                             onClick={() => { if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id); }}
-                            className="p-1.5 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                            className="p-1.5 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 transition-all sm:opacity-0 sm:group-hover:opacity-100"
                             title="Xóa"
                           >
                             <Trash2 size={13} />

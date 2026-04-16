@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy, Trash2 } from 'lucide-react';
+import { Shield, FileDown, FileText, Heart, MessageCircle, Clock, Camera, Save, X, Edit3, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, Download, ArrowLeft, Copy, Trash2, Share2 } from 'lucide-react';
 import { ProfileUser, useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SavedDocument } from '../store/useSocialStore';
 import { useStore } from '../store/useStore';
@@ -366,6 +366,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
 
   // User stats - use profileUser's ID
   const userPosts = safePosts.filter(p => p.authorId === profileUser.id);
+  const sharedPosts = safePosts.filter(p => p.authorId !== profileUser.id && Array.isArray(p.sharedBy) && p.sharedBy.includes(profileUser.id));
   const userComments = safePosts.reduce((acc, p) => acc + (Array.isArray(p.comments) ? p.comments : []).filter(c => c.authorId === profileUser.id).length, 0);
   const totalLikesReceived = userPosts.reduce((acc, p) => acc + (Array.isArray(p.likes) ? p.likes.length : 0), 0)
     + safePosts.reduce((acc, p) => acc + (Array.isArray(p.comments) ? p.comments : []).filter(c => c.authorId === profileUser.id).reduce((a, c) => a + (Array.isArray(c.likes) ? c.likes.length : 0), 0), 0);
@@ -554,6 +555,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
 
   const STATS = [
     { label: 'Bài viết', value: userPosts.length, icon: FileText, color: 'blue' },
+    { label: 'Chia sẻ', value: sharedPosts.length, icon: Share2, color: 'cyan' },
     { label: 'Bình luận', value: userComments, icon: MessageCircle, color: 'green' },
     { label: 'Lượt thích', value: totalLikesReceived, icon: Heart, color: 'red' },
     { label: 'Tài liệu', value: userDocs.length, icon: FileText, color: 'purple' },
@@ -923,7 +925,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       )}
 
       {/* Content Tabs */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-1.5 sm:gap-2 mb-4 overflow-x-auto pb-1">
         {[
           { id: 'posts' as const, label: isViewingOther ? 'Bài viết' : 'Bài viết của tôi', icon: FileText },
           { id: 'docs' as const, label: 'Tài liệu', icon: FileText },
@@ -934,7 +936,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
             <button
               key={tab.id}
               onClick={() => setActiveProfileTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all ${
+              className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-1.5 sm:gap-2 transition-all whitespace-nowrap ${
                 activeProfileTab === tab.id
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
                   : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
@@ -950,8 +952,14 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       <div className="space-y-3">
         {activeProfileTab === 'posts' && (
           <>
+            {/* Own posts */}
+            <div className="mb-2">
+              <h3 className="text-xs font-bold text-zinc-400 uppercase mb-2 px-1">
+                {isViewingOther ? 'Bài viết' : 'Bài viết của tôi'} ({userPosts.length})
+              </h3>
+            </div>
             {userPosts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center">
+              <div className="bg-white rounded-2xl border border-zinc-200 p-8 sm:p-12 text-center">
                 <FileText size={40} className="mx-auto mb-3 text-zinc-200" />
                 <p className="text-sm text-zinc-400">{isViewingOther ? 'Chưa có bài viết nào' : 'Bạn chưa đăng bài viết nào'}</p>
               </div>
@@ -960,14 +968,56 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
                 <div key={post.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all">
                   <p className="text-sm text-zinc-700 whitespace-pre-wrap line-clamp-3">{post.content}</p>
                   {post.images.length > 0 && (
-                    <div className="flex gap-1 mt-2">
+                    <div className="flex gap-1 mt-2 flex-wrap">
                       {post.images.slice(0, 3).map((img, i) => (
-                        <div key={i} className="w-16 h-16 rounded-lg overflow-hidden bg-zinc-100">
+                        <div key={i} className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-zinc-100">
                           <img src={img} alt="" className="w-full h-full object-cover" />
                         </div>
                       ))}
                       {post.images.length > 3 && (
-                        <div className="w-16 h-16 rounded-lg bg-zinc-100 flex items-center justify-center text-xs font-bold text-zinc-400">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-zinc-100 flex items-center justify-center text-xs font-bold text-zinc-400">
+                          +{post.images.length - 3}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4 mt-3 text-xs text-zinc-400">
+                    <span className="flex items-center gap-1"><Clock size={11} /> {timeAgo(post.createdAt)}</span>
+                    <span className="flex items-center gap-1"><Heart size={11} /> {post.likes.length}</span>
+                    <span className="flex items-center gap-1"><MessageCircle size={11} /> {post.comments.length}</span>
+                  </div>
+                </div>
+              ))
+            )}
+
+            {/* Shared posts */}
+            <div className="mt-6 mb-2">
+              <h3 className="text-xs font-bold text-zinc-400 uppercase mb-2 px-1">
+                Bài viết đã chia sẻ ({sharedPosts.length})
+              </h3>
+            </div>
+            {sharedPosts.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-zinc-200 p-8 sm:p-12 text-center">
+                <Share2 size={40} className="mx-auto mb-3 text-zinc-200" />
+                <p className="text-sm text-zinc-400">{isViewingOther ? 'Chưa chia sẻ bài viết nào' : 'Bạn chưa chia sẻ bài viết nào'}</p>
+              </div>
+            ) : (
+              sharedPosts.map(post => (
+                <div key={`shared-${post.id}`} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all">
+                  <div className="flex items-center gap-2 mb-2 text-xs text-zinc-400">
+                    <Share2 size={11} />
+                    <span>Đã chia sẻ bài viết của <strong className="text-zinc-600">{post.authorName}</strong></span>
+                  </div>
+                  <p className="text-sm text-zinc-700 whitespace-pre-wrap line-clamp-3">{post.content}</p>
+                  {post.images.length > 0 && (
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      {post.images.slice(0, 3).map((img, i) => (
+                        <div key={i} className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-zinc-100">
+                          <img src={img} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                      {post.images.length > 3 && (
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-zinc-100 flex items-center justify-center text-xs font-bold text-zinc-400">
                           +{post.images.length - 3}
                         </div>
                       )}

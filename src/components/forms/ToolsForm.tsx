@@ -68,7 +68,22 @@ export const ToolsForm: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Input label="Đơn vị" value={tool.unit} onChange={e => updateTool(tool.id, { unit: e.target.value })} />
-                  <Input label="Số lượng" type="number" min={0} step={0.5} value={tool.quantity} onChange={e => updateTool(tool.id, { quantity: parseFloat(e.target.value) || 0 })} />
+                  <Input
+                    label="Số lượng"
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={tool.quantity ?? ''}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      updateTool(tool.id, { quantity: raw === '' ? ('' as any) : parseFloat(raw) });
+                    }}
+                    onBlur={() => {
+                      if (tool.quantity === '' || tool.quantity === undefined || isNaN(Number(tool.quantity))) {
+                        updateTool(tool.id, { quantity: 0 });
+                      }
+                    }}
+                  />
                 </div>
                 <Input label="Mục đích sử dụng" value={tool.purpose} onChange={e => updateTool(tool.id, { purpose: e.target.value })} />
                 <button
