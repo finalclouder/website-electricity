@@ -151,12 +151,12 @@ async function startServer() {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         // Allow inline scripts and Cloudflare insights
         "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com"],
-        // Allow images from any secure source (Supabase, Unsplash, Google/FB avatars, etc.)
+        // Allow images from any secure source (Supabase, R2, Unsplash, Google/FB avatars, etc.)
         "img-src": ["'self'", "data:", "blob:", "https:"],
-        // Allow media from Supabase and w3schools (placeholder videos)
-        "media-src": ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in", "https://www.w3schools.com"],
-        // Allow connections to Supabase API, Realtime WS, Gemini, Safe Browsing
-        "connect-src": ["'self'", "https://*.supabase.co", "https://*.supabase.in", "wss://*.supabase.co", "wss://*.supabase.in", "https://generativelanguage.googleapis.com", "https://safebrowsing.googleapis.com"],
+        // Allow media from Supabase, R2, and w3schools (placeholder videos)
+        "media-src": ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in", "https://*.r2.dev", "https://*.cloudflarestorage.com", "https://www.w3schools.com"],
+        // Allow connections to Supabase API, Realtime WS, Gemini, Safe Browsing, R2 upload
+        "connect-src": ["'self'", "https://*.supabase.co", "https://*.supabase.in", "wss://*.supabase.co", "wss://*.supabase.in", "https://generativelanguage.googleapis.com", "https://safebrowsing.googleapis.com", "https://*.r2.cloudflarestorage.com", "https://*.r2.dev"],
         // Allow Google Fonts
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com"],

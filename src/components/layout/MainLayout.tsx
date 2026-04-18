@@ -75,6 +75,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
       case 'post_comment':
       case 'post_share':
       case 'comment_like':
+      case 'admin_post':
         // Navigate to social tab and scroll to the specific post
         navigateToPost(notification.entityId);
         break;

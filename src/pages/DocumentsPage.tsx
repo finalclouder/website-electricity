@@ -202,7 +202,7 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
       </div>
 
       {/* Search & Filter */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="flex-1 relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
@@ -212,12 +212,12 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
             placeholder="Tìm kiếm tài liệu..."
           />
         </div>
-        <div className="flex gap-1.5 bg-white border border-zinc-200 rounded-xl p-1">
+        <div className="flex gap-1.5 bg-white border border-zinc-200 rounded-xl p-1 overflow-x-auto">
           {['all', 'draft', 'completed', 'approved'].map(status => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 filterStatus === status ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:bg-zinc-50'
               }`}
             >
@@ -234,27 +234,27 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
           const StatusIcon = statusInfo.icon;
 
           return (
-            <div key={doc.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all p-4 group">
-              <div className="flex items-start gap-4">
+            <div key={doc.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all p-4">
+              <div className="flex items-start gap-3">
                 <button
                   type="button"
                   onClick={() => onViewProfile?.(doc.authorId)}
                   className="shrink-0 transition hover:opacity-80"
                 >
-                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileText size={24} className="text-blue-600" />
+                  <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <FileText size={20} className="text-blue-600" />
                   </div>
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-sm font-bold text-zinc-900 truncate">{doc.title}</h3>
-                    <span className={`px-2 py-0.5 bg-${statusInfo.color}-100 text-${statusInfo.color}-700 text-[10px] font-bold uppercase rounded-full flex items-center gap-1`}>
+                    <span className={`px-2 py-0.5 bg-${statusInfo.color}-100 text-${statusInfo.color}-700 text-[10px] font-bold uppercase rounded-full flex items-center gap-1 shrink-0`}>
                       <StatusIcon size={10} />
                       {statusInfo.label}
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 mb-2 truncate">{doc.description}</p>
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
                     <span className="flex items-center gap-1"><Clock size={11} /> {formatDateTime(doc.updatedAt)}</span>
                     <span className="flex items-center gap-1"><Download size={11} /> {doc.downloadCount ?? 0} lượt tải</span>
                     <button
@@ -272,65 +272,59 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+              </div>
+              {/* Action buttons — always visible */}
+              <div className="flex items-center gap-1 mt-3 pt-3 border-t border-zinc-100 overflow-x-auto">
+                <button
+                  onClick={() => openPreview(doc)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-600 text-xs font-medium whitespace-nowrap transition-colors"
+                >
+                  <Eye size={14} /> Xem
+                </button>
+                <button
+                  onClick={() => exportPdf(doc)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 rounded-lg text-sky-600 text-xs font-medium whitespace-nowrap transition-colors"
+                >
+                  <FileDown size={14} /> PDF
+                </button>
+                <button
+                  onClick={() => exportWord(doc)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 rounded-lg text-emerald-600 text-xs font-medium whitespace-nowrap transition-colors"
+                >
+                  <FileText size={14} /> Word
+                </button>
+                <button
+                  onClick={() => handleLoad(doc)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 text-xs font-medium whitespace-nowrap transition-colors"
+                >
+                  <Download size={14} /> Mở
+                </button>
+                {doc.authorId !== user?.id && (
                   <button
-                    onClick={() => openPreview(doc)}
-                    className="p-2 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors"
-                    title="Xem trước"
+                    onClick={() => handleClone(doc)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 rounded-lg text-purple-600 text-xs font-medium whitespace-nowrap transition-colors"
                   >
-                    <Eye size={16} />
+                    <Copy size={14} /> Chép
                   </button>
+                )}
+                {canPublishDocument(doc) && doc.status !== 'approved' && (
                   <button
-                    onClick={() => exportPdf(doc)}
-                    className="p-2 hover:bg-sky-50 rounded-lg text-sky-600 transition-colors"
-                    title="Tải PDF"
+                    onClick={() => handleApproveDocument(doc)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 text-xs font-medium whitespace-nowrap transition-colors"
                   >
-                    <FileDown size={16} />
+                    <CheckCircle2 size={14} /> {doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}
                   </button>
+                )}
+                {(user?.role === 'admin' || doc.authorId === user?.id) && (
                   <button
-                    onClick={() => exportWord(doc)}
-                    className="p-2 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-colors"
-                    title="Tải Word"
+                    onClick={() => {
+                      if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 rounded-lg text-red-500 text-xs font-medium whitespace-nowrap transition-colors"
                   >
-                    <FileText size={16} />
+                    <Trash2 size={14} /> Xóa
                   </button>
-                  <button
-                    onClick={() => handleLoad(doc)}
-                    className="p-2 hover:bg-green-50 rounded-lg text-green-600 transition-colors"
-                    title="Tải về và mở"
-                  >
-                    <Download size={16} />
-                  </button>
-                  {doc.authorId !== user?.id && (
-                    <button
-                      onClick={() => handleClone(doc)}
-                      className="p-2 hover:bg-purple-50 rounded-lg text-purple-600 transition-colors"
-                      title="Sao chép về của tôi"
-                    >
-                      <Copy size={16} />
-                    </button>
-                  )}
-                  {canPublishDocument(doc) && doc.status !== 'approved' && (
-                    <button
-                      onClick={() => handleApproveDocument(doc)}
-                      className="p-2 hover:bg-green-50 rounded-lg text-green-600 transition-colors"
-                      title={doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}
-                    >
-                      <CheckCircle2 size={16} />
-                    </button>
-                  )}
-                  {(user?.role === 'admin' || doc.authorId === user?.id) && (
-                    <button
-                      onClick={() => {
-                        if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id);
-                      }}
-                      className="p-2 hover:bg-red-50 rounded-lg text-zinc-400 hover:text-red-500 transition-colors"
-                      title="Xóa"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           );

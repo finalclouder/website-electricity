@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText, Plus, Trash2, Copy } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { Accordion, Input } from '../UI';
+import { Accordion, Input, DateMaskInput } from '../UI';
 
 export const CoverPageForm: React.FC = () => {
   const { data, updateData, activeSection, toggleSection, addJobItem, removeJobItem, copyJobItem } = useStore();
@@ -105,10 +105,10 @@ export const CoverPageForm: React.FC = () => {
 
         {/* Ngày lập */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
-          <Input
+          <DateMaskInput
             label="Ngày lập (dd/mm/yyyy)"
             value={data.ngayLap}
-            onChange={e => updateData({ ngayLap: e.target.value })}
+            onChange={val => updateData({ ngayLap: val })}
           />
         </div>
 

@@ -209,6 +209,9 @@ function buildNotificationMessage(notification: { type: string; actorName?: stri
   if (notification.type === 'comment_like') {
     return `${actorName} đã thích bình luận của bạn`;
   }
+  if (notification.type === 'admin_post') {
+    return `${actorName} đã đăng bài viết mới`;
+  }
   return `${actorName} có hoạt động mới`;
 }
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Shield, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { Accordion, Input, Checkbox } from '../UI';
+import { Accordion, Input, Checkbox, DateMaskInput } from '../UI';
 import { RiskItem } from '../../types';
 
 export const RiskIdentificationForm: React.FC = () => {
@@ -139,7 +139,7 @@ export const RiskIdentificationForm: React.FC = () => {
         {/* Thời gian dự kiến */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Thời gian dự kiến</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Input
               label="Giờ"
               type="number"
@@ -171,37 +171,23 @@ export const RiskIdentificationForm: React.FC = () => {
                 }
               }}
             />
-            <Input
-              label="Tháng"
-              type="number"
-              min={1}
-              max={12}
-              value={data.tg_thang ?? ''}
-              onChange={e => {
-                const raw = e.target.value;
-                updateData({ tg_thang: raw === '' ? ('' as any) : parseInt(raw) });
-              }}
-              onBlur={() => {
-                if (data.tg_thang === '' || data.tg_thang === undefined || isNaN(Number(data.tg_thang))) {
-                  updateData({ tg_thang: 1 });
-                }
-              }}
-            />
-            <Input
-              label="Năm"
-              type="number"
-              value={data.tg_nam ?? ''}
-              onChange={e => {
-                const raw = e.target.value;
-                updateData({ tg_nam: raw === '' ? ('' as any) : parseInt(raw) });
-              }}
-              onBlur={() => {
-                if (data.tg_nam === '' || data.tg_nam === undefined || isNaN(Number(data.tg_nam))) {
-                  updateData({ tg_nam: new Date().getFullYear() });
-                }
-              }}
-            />
           </div>
+          <DateMaskInput
+            label="Ngày thi công (dd/mm/yyyy)"
+            value={(() => {
+              const d = String(data.tg_soNgay || '').padStart(2, '0');
+              const m = String(data.tg_thang || '').padStart(2, '0');
+              const y = String(data.tg_nam || '').padStart(4, '0');
+              return `${d}/${m}/${y}`;
+            })()}
+            onChange={val => {
+              const digits = (val || '').replace(/\D/g, '');
+              const day = parseInt(digits.slice(0, 2)) || 1;
+              const month = parseInt(digits.slice(2, 4)) || 1;
+              const year = parseInt(digits.slice(4, 8)) || new Date().getFullYear();
+              updateData({ tg_soNgay: day, tg_thang: month, tg_nam: year });
+            }}
+          />
         </div>
 
         {/* Bảng rủi ro */}

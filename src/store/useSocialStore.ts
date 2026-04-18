@@ -345,18 +345,57 @@ export const useSocialStore = create<SocialState>()(
 
       addPost: async (post) => {
         try {
-          // Build multipart/form-data — backend uploads files to Supabase Storage
-          // and returns permanent URLs. No base64 strings touch the database.
-          const form = new FormData();
-          form.append('content', post.content);
-          form.append('category', post.category);
-          if (post.attachmentName) form.append('attachmentName', post.attachmentName);
-          // Append each File object under the 'media' field name
-          for (const file of post.mediaFiles ?? []) {
-            form.append('media', file);
+          const mediaFiles = post.mediaFiles ?? [];
+
+          if (mediaFiles.length > 0) {
+            // ── R2 presigned upload flow ─────────────────────────────────────
+            // 1. Request presigned URLs from server
+            const presignRes = await api.post<{
+              uploads: { uploadUrl: string; publicUrl: string; key: string }[];
+            }>('/posts/presign', {
+              files: mediaFiles.map(f => ({
+                contentType: f.type,
+                fileSize: f.size,
+                fileName: f.name,
+              })),
+            });
+
+            // 2. Upload each file directly to R2 via presigned PUT URL
+            const mediaUrls: string[] = [];
+            for (let i = 0; i < mediaFiles.length; i++) {
+              const file = mediaFiles[i];
+              const { uploadUrl, publicUrl } = presignRes.uploads[i];
+
+              const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file,
+              });
+
+              if (!uploadRes.ok) {
+                throw new Error(`Upload file "${file.name}" thất bại (${uploadRes.status})`);
+              }
+
+              mediaUrls.push(publicUrl);
+            }
+
+            // 3. Create post with R2 media URLs (JSON body, no multipart)
+            const posts = await api.post<{ data: SocialPost[]; total: number; hasNextPage: boolean }>('/posts', {
+              content: post.content,
+              category: post.category,
+              attachmentName: post.attachmentName || '',
+              mediaUrls,
+            });
+            set({ posts: posts.data, postsPage: 1, postsHasNextPage: posts.hasNextPage });
+          } else {
+            // ── Text-only post — simple JSON ─────────────────────────────────
+            const posts = await api.post<{ data: SocialPost[]; total: number; hasNextPage: boolean }>('/posts', {
+              content: post.content,
+              category: post.category,
+              attachmentName: post.attachmentName || '',
+            });
+            set({ posts: posts.data, postsPage: 1, postsHasNextPage: posts.hasNextPage });
           }
-          const posts = await api.post<{ data: SocialPost[]; total: number; hasNextPage: boolean }>('/posts', form);
-          set({ posts: posts.data, postsPage: 1, postsHasNextPage: posts.hasNextPage });
         } catch (error) {
           console.error('Add post error:', error);
           throw error; // re-throw so the caller can show error feedback

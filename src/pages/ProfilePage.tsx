@@ -7,6 +7,7 @@ import { PATCTCData } from '../types';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { parseAppDate, timeAgo } from '../utils/date';
 import { api, getAuthHeaders } from '../utils/api';
+import { useNavigationStore } from '../store/useNavigationStore';
 
 function getInitials(name?: string): string {
   if (!name) return '?';
@@ -15,6 +16,7 @@ function getInitials(name?: string): string {
 
 export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void; onTabChange?: (tab: string) => void }> = ({ viewingUserId, onBack, onTabChange }) => {
   const { user, updateProfile, changePassword, getAllUsers, fetchUserById } = useAuthStore();
+  const { navigateToPost } = useNavigationStore();
   const {
     posts,
     savedDocuments,
@@ -965,7 +967,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               </div>
             ) : (
               userPosts.map(post => (
-                <div key={post.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all">
+                <div key={post.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all cursor-pointer" onClick={() => navigateToPost(post.id)}>
                   <p className="text-sm text-zinc-700 whitespace-pre-wrap line-clamp-3">{post.content}</p>
                   {post.images.length > 0 && (
                     <div className="flex gap-1 mt-2 flex-wrap">
@@ -1003,7 +1005,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
               </div>
             ) : (
               sharedPosts.map(post => (
-                <div key={`shared-${post.id}`} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all">
+                <div key={`shared-${post.id}`} className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 hover:shadow-md transition-all cursor-pointer" onClick={() => navigateToPost(post.id)}>
                   <div className="flex items-center gap-2 mb-2 text-xs text-zinc-400">
                     <Share2 size={11} />
                     <span>Đã chia sẻ bài viết của <strong className="text-zinc-600">{post.authorName}</strong></span>

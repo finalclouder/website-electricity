@@ -18,7 +18,7 @@ function getInitials(name: string): string {
 }
 
 function isVideoUrl(url: string): boolean {
-  return url.startsWith('data:video/') || /\.(mp4|webm|ogg|mov)$/i.test(url);
+  return url.startsWith('data:video/') || /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
 }
 
 // ============ Media Gallery Component ============
@@ -608,6 +608,7 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   // Preview URLs for display only (object URLs) — revoked on submit/remove
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
+  const [isPosting, setIsPosting] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
@@ -633,11 +634,39 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
     if (!files) return;
 
     Array.from(files).forEach(file => {
-      if (file.size > 10 * 1024 * 1024) {
-        alert(`File "${file.name}" quá lớn (tối đa 10MB)`);
+      const isVideo = file.type.startsWith('video/');
+      const maxSize = isVideo ? 500 * 1024 * 1024 : 75 * 1024 * 1024;
+      const maxLabel = isVideo ? '500MB' : '75MB';
+
+      if (file.size > maxSize) {
+        toast.error(`File "${file.name}" quá lớn (tối đa ${maxLabel})`);
         return;
       }
-      // Store the raw File for upload; create an object URL for preview only
+
+      // Video duration check (≤ 5 minutes)
+      if (isVideo) {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          URL.revokeObjectURL(video.src);
+          if (video.duration > 300) {
+            toast.error(`Video "${file.name}" dài ${Math.round(video.duration / 60)} phút. Tối đa 5 phút.`);
+            return;
+          }
+          // Duration OK — add to state
+          const previewUrl = URL.createObjectURL(file);
+          setMediaFiles(prev => [...prev, file]);
+          setMediaPreviews(prev => [...prev, previewUrl]);
+        };
+        video.onerror = () => {
+          URL.revokeObjectURL(video.src);
+          toast.error(`Không thể đọc video "${file.name}"`);
+        };
+        video.src = URL.createObjectURL(file);
+        return; // async — will add to state in onloadedmetadata
+      }
+
+      // Image — add immediately
       const previewUrl = URL.createObjectURL(file);
       setMediaFiles(prev => [...prev, file]);
       setMediaPreviews(prev => [...prev, previewUrl]);
@@ -654,7 +683,8 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
   };
 
   const handlePost = async () => {
-    if ((!newContent.trim() && mediaFiles.length === 0) || !user) return;
+    if ((!newContent.trim() && mediaFiles.length === 0) || !user || isPosting) return;
+    setIsPosting(true);
     try {
       await addPost({
         authorId: user.id,
@@ -673,6 +703,8 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
       setMediaPreviews([]);
     } catch (error: any) {
       toast.error(error?.message || 'Không thể đăng bài. Vui lòng thử lại.');
+    } finally {
+      setIsPosting(false);
     }
   };
 
@@ -732,7 +764,7 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
                 )}
                 <button
                   onClick={() => removeMedia(idx)}
-                  className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-all"
+                  className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 hover:bg-black/80 rounded-full text-white sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                 >
                   <X size={12} />
                 </button>
@@ -753,7 +785,7 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
         <input
           ref={videoInputRef}
           type="file"
-          accept="video/*"
+          accept="video/mp4,video/webm,video/quicktime"
           className="hidden"
           onChange={handleMediaSelect}
         />
@@ -798,10 +830,17 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
 
           <button
             onClick={handlePost}
-            disabled={!newContent.trim() && mediaFiles.length === 0}
-            className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white text-xs sm:text-sm font-bold rounded-xl transition-all flex-shrink-0"
+            disabled={isPosting || (!newContent.trim() && mediaFiles.length === 0)}
+            className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold rounded-xl transition-all flex-shrink-0 flex items-center gap-1.5"
           >
-            Đăng bài
+            {isPosting ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Đang đăng...
+              </>
+            ) : (
+              'Đăng bài'
+            )}
           </button>
         </div>
       </div>

@@ -1,7 +1,25 @@
 import React from 'react';
 import { Shield, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { Accordion, Input } from '../UI';
+import { Accordion, Input, DateMaskInput } from '../UI';
+
+// Helper: combine separate day/month/year into dd/mm/yyyy string
+function combineDateParts(day: string, month: string, year: string): string {
+  const d = (day || '').padStart(2, '0');
+  const m = (month || '').padStart(2, '0');
+  const y = (year || '').padStart(4, '0');
+  return `${d}/${m}/${y}`;
+}
+
+// Helper: split dd/mm/yyyy into { day, month, year }
+function splitDateParts(value: string): { day: string; month: string; year: string } {
+  const digits = (value || '').replace(/\D/g, '');
+  return {
+    day: digits.slice(0, 2),
+    month: digits.slice(2, 4),
+    year: digits.slice(4, 8),
+  };
+}
 
 export const LegalBasisForm: React.FC = () => {
   const { data, updateData, activeSection, toggleSection, addCanCuBoSung, removeCanCuBoSung } = useStore();
@@ -32,10 +50,10 @@ export const LegalBasisForm: React.FC = () => {
               value={data.canCu9_soVanBan}
               onChange={e => updateData({ canCu9_soVanBan: e.target.value })}
             />
-            <Input
+            <DateMaskInput
               label="Ngày văn bản"
               value={data.canCu9_ngayVanBan}
-              onChange={e => updateData({ canCu9_ngayVanBan: e.target.value })}
+              onChange={val => updateData({ canCu9_ngayVanBan: val })}
             />
           </div>
         </div>
@@ -43,26 +61,18 @@ export const LegalBasisForm: React.FC = () => {
         {/* Mục 10 */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Mục 10: Biên bản khảo sát hiện trường</div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4">
-            <Input
-              label="Ngày"
-              type="number"
-              value={data.canCu10_ngay}
-              onChange={e => updateData({ canCu10_ngay: e.target.value })}
-            />
-            <Input
-              label="Tháng"
-              type="number"
-              value={data.canCu10_thang}
-              onChange={e => updateData({ canCu10_thang: e.target.value })}
-            />
-            <Input
-              label="Năm"
-              type="number"
-              value={data.canCu10_nam}
-              onChange={e => updateData({ canCu10_nam: e.target.value })}
-            />
-          </div>
+          <DateMaskInput
+            label="Ngày khảo sát (dd/mm/yyyy)"
+            value={combineDateParts(data.canCu10_ngay, data.canCu10_thang, data.canCu10_nam)}
+            onChange={val => {
+              const parts = splitDateParts(val);
+              updateData({
+                canCu10_ngay: parts.day,
+                canCu10_thang: parts.month,
+                canCu10_nam: parts.year,
+              });
+            }}
+          />
         </div>
 
         {/* Căn cứ bổ sung */}

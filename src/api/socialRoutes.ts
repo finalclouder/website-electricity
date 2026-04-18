@@ -4,9 +4,10 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
-import { notificationDb, postDb, uploadFileToStorage } from '../../database.js';
+import { notificationDb, postDb, userDb, uploadFileToStorage } from '../../database.js';
 import { authMiddleware } from './authMiddleware.js';
 import { scanContentForThreats } from './urlSafety.js';
+import { generatePresignedUpload, deleteR2Object, deleteR2MediaUrls } from '../utils/r2.js';
 
 const router = Router();
 
@@ -55,6 +56,33 @@ const mediaUpload = multer({
   },
 });
 
+// POST /api/posts/presign - Get presigned R2 upload URLs for media files
+// Client sends array of { contentType, fileSize, fileName } and gets back presigned PUT URLs
+router.post('/presign', authMiddleware, async (req, res) => {
+  try {
+    const { files } = req.body as {
+      files: { contentType: string; fileSize: number; fileName: string }[];
+    };
+
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ error: 'Danh sách files không hợp lệ' });
+    }
+
+    if (files.length > 10) {
+      return res.status(400).json({ error: 'Tối đa 10 files mỗi bài đăng' });
+    }
+
+    const results = await Promise.all(
+      files.map(f => generatePresignedUpload(f.contentType, f.fileSize))
+    );
+
+    res.json({ uploads: results });
+  } catch (error: any) {
+    console.error('Presign error:', error.message);
+    res.status(400).json({ error: error.message || 'Lỗi tạo presigned URL' });
+  }
+});
+
 // GET /api/posts - Get paginated posts (requires auth)
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -68,15 +96,31 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/posts - Create post (multipart/form-data with optional media files)
-router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res) => {
+// POST /api/posts - Create post
+// Supports two media flows:
+//   1) JSON body with mediaUrls[] — client already uploaded to R2 via presigned URLs
+//   2) multipart/form-data with media files — legacy flow via multer + Supabase Storage
+router.post('/', authMiddleware, (req, res, next) => {
+  // If Content-Type is JSON, skip multer (R2 flow)
+  if (req.is('json')) return next();
+  // Otherwise, parse multipart (legacy flow)
+  mediaUpload.array('media', 10)(req, res, next);
+}, async (req, res) => {
   try {
     const { userId } = (req as any).user;
-    const { content, attachmentName, category } = req.body;
+    const { content, attachmentName, category, mediaUrls } = req.body;
     const normalizedContent = content?.trim() || '';
     const files = (req.files as Express.Multer.File[]) || [];
 
-    if (!normalizedContent && files.length === 0) {
+    // Determine media URLs: from R2 presigned flow or legacy multer flow
+    let imageUrls: string[] = [];
+
+    if (Array.isArray(mediaUrls) && mediaUrls.length > 0) {
+      // R2 flow — client uploaded directly, just validate URLs
+      imageUrls = mediaUrls.filter((u: string) => typeof u === 'string' && u.startsWith('http')).slice(0, 10);
+    }
+
+    if (!normalizedContent && files.length === 0 && imageUrls.length === 0) {
       return res.status(400).json({ error: 'Nội dung hoặc media không được để trống' });
     }
 
@@ -89,10 +133,7 @@ router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res
       return res.status(400).json({ error: 'Danh mục không hợp lệ' });
     }
 
-    // ── Magic bytes validation ─────────────────────────────────────────────
-    // Multer only checks Content-Type header (attacker-controlled).
-    // This validates actual file content to prevent smuggling attacks
-    // (e.g. PHP payload sent as image/jpeg).
+    // ── Magic bytes validation (legacy multer flow only) ──────────────────
     for (const file of files) {
       if (!validateMagicBytes(file.buffer, file.mimetype)) {
         return res.status(400).json({
@@ -102,7 +143,6 @@ router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res
     }
 
     // ── URL Safety Scan ─────────────────────────────────────────────────
-    // Check for malicious links BEFORE uploading files or saving to DB.
     if (normalizedContent) {
       const scanResult = await scanContentForThreats(normalizedContent);
       if (scanResult.isMalicious) {
@@ -112,8 +152,7 @@ router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res
       }
     }
 
-    // Upload each file to Supabase Storage and collect public URLs
-    const imageUrls: string[] = [];
+    // Legacy multer flow: upload to Supabase Storage
     for (const file of files) {
       const url = await uploadFileToStorage(
         file.buffer,
@@ -133,6 +172,29 @@ router.post('/', authMiddleware, mediaUpload.array('media', 10), async (req, res
       attachmentName: attachmentName || '',
       category: category || 'general',
     });
+
+    // ── Notify all users when admin posts ────────────────────────────────
+    const { role } = (req as any).user;
+    if (role === 'admin') {
+      try {
+        const allUsers = await userDb.getAll();
+        const otherUsers = allUsers.filter((u: any) => u.id !== userId);
+        await Promise.allSettled(
+          otherUsers.map((u: any) =>
+            notificationDb.create({
+              userId: u.id,
+              actorId: userId,
+              type: 'admin_post',
+              entityType: 'post',
+              entityId: id,
+              dataJson: { postId: id, actorId: userId },
+            })
+          )
+        );
+      } catch (err: any) {
+        console.warn('Admin broadcast notification warning:', err.message);
+      }
+    }
 
     const result = await postDb.getPaginated(1, 20);
     res.json(result);
@@ -158,6 +220,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
     if (post.authorId !== userId && role !== 'admin') {
       return res.status(403).json({ error: 'Bạn không có quyền xóa bài viết này' });
+    }
+
+    // Delete media files from R2 (if any) before removing the DB record
+    const mediaUrls = Array.isArray(post.images) ? post.images : [];
+    if (mediaUrls.length > 0) {
+      try {
+        await deleteR2MediaUrls(mediaUrls);
+      } catch (err: any) {
+        console.warn('R2 cleanup warning (non-fatal):', err.message);
+      }
     }
 
     await postDb.delete(req.params.id);
