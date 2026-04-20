@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2 } from 'lucide-react';
+import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
@@ -41,6 +41,7 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
   const [activeSection, setActiveSection] = useState('general');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null); // track which field is uploading
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleSave = async () => {
     try {
@@ -142,15 +143,66 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
           </div>
           {saveError && <div className="text-xs text-red-600 mt-1">{saveError}</div>}
         </div>
-        <button
-          onClick={handleSave}
-          disabled={isSaving || !hasUnsavedChanges}
-          className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2"
-        >
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          <span>{isSaving ? 'Đang lưu...' : 'Đồng bộ & Lưu Web'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPreview(!showPreview)}
+            className={`px-4 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 border ${
+              showPreview
+                ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/20'
+                : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'
+            }`}
+          >
+            <Eye size={16} />
+            <span>{showPreview ? 'Đóng xem trước' : 'Xem trước'}</span>
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !hasUnsavedChanges}
+            className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2"
+          >
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            <span>{isSaving ? 'Đang lưu...' : 'Đồng bộ & Lưu Web'}</span>
+          </button>
+        </div>
       </div>
+
+      {/* ===== LIVE PREVIEW ===== */}
+      {showPreview && (
+        <div className="mb-4 bg-white rounded-2xl border border-zinc-200 shadow-lg overflow-hidden">
+          <div className="px-4 py-2.5 bg-zinc-50 border-b border-zinc-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Eye size={14} className="text-blue-500" />
+              <span className="text-xs font-bold text-zinc-700">Xem trước trang chủ (Live Preview)</span>
+              <span className="text-[10px] text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">Thay đổi sẽ hiển thị ngay</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-2.5 py-1 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-600 hover:bg-zinc-50 transition-all"
+              >
+                <ExternalLink size={11} /> Mở tab mới
+              </a>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100 transition-all"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="relative" style={{ height: '500px' }}>
+            <iframe
+              src="/?preview=1"
+              className="w-full h-full border-0"
+              title="Landing Page Preview"
+              key={JSON.stringify(config).length}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Section tabs */}
       <div className="flex flex-wrap gap-1.5 mb-6 bg-zinc-50 rounded-xl p-1.5 border border-zinc-100">
         {sections.map(s => {

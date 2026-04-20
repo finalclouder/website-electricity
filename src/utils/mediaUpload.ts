@@ -1,135 +1,74 @@
 /**
  * Media upload utilities for Admin Landing Page editor.
- * Handles client-side image compression plus server-backed landing video uploads.
+ * Handles server-backed image & video uploads for the landing page.
+ * Images are uploaded to /api/landing/image (stored on server disk),
+ * NOT embedded as base64 in the config JSON.
  */
 
 import { api } from './api';
 
-// ============ IMAGE COMPRESSION ============
+// ============ IMAGE UPLOAD TO SERVER ============
 
-interface CompressOptions {
-  maxWidth?: number;
-  maxHeight?: number;
-  quality?: number; // 0-1, default 0.8
-  format?: 'image/jpeg' | 'image/webp' | 'image/png';
+export interface UploadedLandingImage {
+  url: string;
+  originalName: string;
+  size: number;
+  mimeType: string;
 }
 
 /**
- * Compress and resize an image file.
- * Returns a base64 dataURL string.
+ * Upload an image file to the server for landing page use.
+ * Returns a server URL like /uploads/landing/images/filename.jpg
+ * that persists across reloads (unlike base64 dataURLs in JSON).
  */
-export function compressImage(
-  file: File,
-  options: CompressOptions = {}
-): Promise<string> {
-  const {
-    maxWidth = 1200,
-    maxHeight = 800,
-    quality = 0.8,
-    format = 'image/jpeg',
-  } = options;
+export async function uploadLandingImage(file: File): Promise<UploadedLandingImage> {
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    throw new Error('File không phải là hình ảnh');
+  }
 
-  return new Promise((resolve, reject) => {
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      reject(new Error('File không phải là hình ảnh'));
-      return;
-    }
+  // Validate file size (max 10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('Ảnh quá lớn (tối đa 10MB)');
+  }
 
-    // Validate file size (max 10MB raw input)
-    if (file.size > 10 * 1024 * 1024) {
-      reject(new Error('File quá lớn (tối đa 10MB)'));
-      return;
-    }
+  const formData = new FormData();
+  formData.append('file', file);
 
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Không thể đọc file'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Không thể tải hình ảnh'));
-      img.onload = () => {
-        // Calculate new dimensions maintaining aspect ratio
-        let { width, height } = img;
-        if (width > maxWidth || height > maxHeight) {
-          const ratio = Math.min(maxWidth / width, maxHeight / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-
-        // Draw to canvas
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Không thể tạo canvas'));
-          return;
-        }
-
-        // White background for JPEG (transparent png → white bg)
-        if (format === 'image/jpeg') {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convert to dataURL
-        const dataUrl = canvas.toDataURL(format, quality);
-        resolve(dataUrl);
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
+  return api.post<UploadedLandingImage>('/landing/image', formData);
 }
 
 /**
- * Compress image specifically for hero slides (large, wide).
+ * Upload hero image (same endpoint, just a convenience wrapper).
+ * Returns the server URL string.
  */
-export function compressHeroImage(file: File): Promise<string> {
-  return compressImage(file, {
-    maxWidth: 1920,
-    maxHeight: 1080,
-    quality: 0.75,
-    format: 'image/jpeg',
-  });
+export async function compressHeroImage(file: File): Promise<string> {
+  const result = await uploadLandingImage(file);
+  return result.url;
 }
 
 /**
- * Compress image for gallery (medium).
+ * Upload gallery image.
  */
-export function compressGalleryImage(file: File): Promise<string> {
-  return compressImage(file, {
-    maxWidth: 1200,
-    maxHeight: 900,
-    quality: 0.8,
-    format: 'image/jpeg',
-  });
+export async function compressGalleryImage(file: File): Promise<string> {
+  const result = await uploadLandingImage(file);
+  return result.url;
 }
 
 /**
- * Compress image for video thumbnail (smaller).
+ * Upload video thumbnail.
  */
-export function compressThumbnail(file: File): Promise<string> {
-  return compressImage(file, {
-    maxWidth: 800,
-    maxHeight: 600,
-    quality: 0.8,
-    format: 'image/jpeg',
-  });
+export async function compressThumbnail(file: File): Promise<string> {
+  const result = await uploadLandingImage(file);
+  return result.url;
 }
 
 /**
- * Compress image for banner background.
+ * Upload banner image.
  */
-export function compressBannerImage(file: File): Promise<string> {
-  return compressImage(file, {
-    maxWidth: 1920,
-    maxHeight: 1080,
-    quality: 0.75,
-    format: 'image/jpeg',
-  });
+export async function compressBannerImage(file: File): Promise<string> {
+  const result = await uploadLandingImage(file);
+  return result.url;
 }
 
 // ============ VIDEO HANDLING ============

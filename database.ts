@@ -1615,25 +1615,52 @@ export const documentDownloadDb = {
 
 export const landingDb = {
   async getConfig() {
-    const { data, error } = await getSupabase()
-      .from('landing_config')
-      .select('config_json')
-      .eq('id', 1)
-      .maybeSingle();
+    try {
+      const { data, error } = await getSupabase()
+        .from('landing_config')
+        .select('config_json')
+        .eq('id', 1)
+        .maybeSingle();
 
-    if (error) throw error;
-    if (!data) return null;
-    return safeJsonParse(data.config_json, null);
+      if (error) {
+        if (isMissingTableError(error, 'landing_config')) {
+          warnMissingTable('landing_config', error);
+          return null;
+        }
+        throw error;
+      }
+      if (!data) return null;
+      return safeJsonParse(data.config_json, null);
+    } catch (error: any) {
+      if (isMissingTableError(error, 'landing_config')) {
+        warnMissingTable('landing_config', error);
+        return null;
+      }
+      throw error;
+    }
   },
 
   async saveConfig(config: any) {
-    const { error } = await getSupabase().from('landing_config').upsert({
-      id: 1,
-      config_json: config,
-      updated_at: toIsoNow(),
-    });
+    try {
+      const { error } = await getSupabase().from('landing_config').upsert({
+        id: 1,
+        config_json: config,
+        updated_at: toIsoNow(),
+      });
 
-    if (error) throw error;
-    return true;
+      if (error) {
+        if (isMissingTableError(error, 'landing_config')) {
+          warnMissingTable('landing_config', error);
+          throw new Error('Bảng landing_config chưa được tạo trong Supabase. Hãy chạy migration SQL.');
+        }
+        throw error;
+      }
+      return true;
+    } catch (error: any) {
+      if (isMissingTableError(error, 'landing_config')) {
+        throw new Error('Bảng landing_config chưa được tạo trong Supabase. Hãy chạy migration SQL.');
+      }
+      throw error;
+    }
   },
 };
