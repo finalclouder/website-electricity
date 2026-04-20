@@ -168,15 +168,12 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [returnToLanding]);
 
-  // Preview mode: when loaded in iframe with ?preview=1, always show landing page
-  const isPreviewMode = new URLSearchParams(window.location.search).get('preview') === '1';
-
-  // Gate 1: Public landing page (only when not logged in) OR preview mode
-  if ((showLanding && !isAuthenticated) || isPreviewMode) {
+  // Gate 1: Public landing page (only when not logged in)
+  if (showLanding && !isAuthenticated) {
     return (
       <>
         <Toaster position="top-right" richColors />
-        <LandingPage onEnter={isPreviewMode ? () => {} : enterFromLanding} />
+        <LandingPage onEnter={enterFromLanding} />
       </>
     );
   }

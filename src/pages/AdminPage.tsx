@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
 import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, formatFileSize, uploadLandingVideo, MAX_LANDING_VIDEO_SIZE_MB } from '../utils/mediaUpload';
+import { LandingPage } from './LandingPage';
 
 import { parseAppDate, timeAgo } from '../utils/date';
 
@@ -173,32 +174,17 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
             <div className="flex items-center gap-2">
               <Eye size={14} className="text-blue-500" />
               <span className="text-xs font-bold text-zinc-700">Xem trước trang chủ (Live Preview)</span>
-              <span className="text-[10px] text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">Thay đổi sẽ hiển thị ngay</span>
+              <span className="text-[10px] text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">Thay đổi hiển thị ngay lập tức</span>
             </div>
-            <div className="flex items-center gap-2">
-              <a
-                href="/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2.5 py-1 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-600 hover:bg-zinc-50 transition-all"
-              >
-                <ExternalLink size={11} /> Mở tab mới
-              </a>
-              <button
-                onClick={() => setShowPreview(false)}
-                className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100 transition-all"
-              >
-                <X size={14} />
-              </button>
-            </div>
+            <button
+              onClick={() => setShowPreview(false)}
+              className="p-1 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100 transition-all"
+            >
+              <X size={14} />
+            </button>
           </div>
-          <div className="relative" style={{ height: '500px' }}>
-            <iframe
-              src="/?preview=1"
-              className="w-full h-full border-0"
-              title="Landing Page Preview"
-              key={JSON.stringify(config).length}
-            />
+          <div className="relative overflow-y-auto" style={{ height: '600px' }}>
+            <LandingPage onEnter={() => {}} />
           </div>
         </div>
       )}
