@@ -1,10 +1,43 @@
-import React from 'react';
-import { FileText, Plus, Trash2, Copy } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { FileText, Plus, Trash2, Copy, Search } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { Accordion, Input, DateMaskInput } from '../UI';
+import { JOB_ITEM_TEMPLATES } from '../../constants';
 
 export const CoverPageForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection, addJobItem, removeJobItem, copyJobItem } = useStore();
+  const {
+    data,
+    updateData,
+    activeSection,
+    toggleSection,
+    addJobItem,
+    removeJobItem,
+    copyJobItem,
+    updateJobItem,
+    updateCot,
+    updateDz,
+    scrollPreviewToSection
+  } = useStore();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showResults, setShowResults] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+
+  const filteredTemplates = searchQuery.trim()
+    ? JOB_ITEM_TEMPLATES.filter(t => normalize(t).includes(normalize(searchQuery)))
+    : JOB_ITEM_TEMPLATES;
 
   return (
     <Accordion
@@ -12,9 +45,10 @@ export const CoverPageForm: React.FC = () => {
       isOpen={activeSection === 'trang-bia'}
       onToggle={() => toggleSection('trang-bia')}
       icon={<FileText size={18} />}
+      sectionId="trang-bia"
+      onInputFocus={() => scrollPreviewToSection('trang-bia')}
     >
       <div className="space-y-6">
-        {/* Số văn bản + Địa danh */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -30,7 +64,6 @@ export const CoverPageForm: React.FC = () => {
           </div>
         </div>
 
-        {/* Hạng mục công việc */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div className="text-sm font-bold text-zinc-700">Hạng mục công việc</div>
@@ -43,6 +76,49 @@ export const CoverPageForm: React.FC = () => {
               </button>
             )}
           </div>
+
+          <div ref={searchRef} className="relative">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <input
+                className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                placeholder="Tìm hạng mục... (thay FCO, thay sứ, đấu lèo...)"
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setShowResults(true); }}
+                onFocus={() => setShowResults(true)}
+              />
+            </div>
+            {showResults && (
+              <div className="absolute z-20 mt-1 w-full bg-white border border-zinc-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {filteredTemplates.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-zinc-400 italic">Không tìm thấy</div>
+                ) : (
+                  filteredTemplates.map((tpl, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-700 transition-colors border-b border-zinc-50 last:border-0"
+                      onClick={() => {
+                        navigator.clipboard.writeText(tpl);
+                        const emptyIdx = data.jobItems.findIndex(j => !j.trim());
+                        if (emptyIdx >= 0) {
+                          updateJobItem(emptyIdx, tpl);
+                        } else if (data.jobItems.length < 2) {
+                          addJobItem();
+                          updateJobItem(data.jobItems.length, tpl);
+                        }
+                        setShowResults(false);
+                        setSearchQuery('');
+                      }}
+                    >
+                      {tpl}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           {data.jobItems.map((item, idx) => (
             <div key={idx} className="space-y-2">
               <div className="flex items-center gap-2">
@@ -54,11 +130,7 @@ export const CoverPageForm: React.FC = () => {
                     className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
                     rows={2}
                     value={item}
-                    onChange={e => {
-                      const newItems = [...data.jobItems];
-                      newItems[idx] = e.target.value;
-                      updateData({ jobItems: newItems });
-                    }}
+                    onChange={e => updateJobItem(idx, e.target.value)}
                     placeholder="Nhập hạng mục công việc..."
                   />
                 </div>
@@ -87,23 +159,21 @@ export const CoverPageForm: React.FC = () => {
           ))}
         </div>
 
-        {/* Cột + ĐZ */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Số cột"
               value={data.cot}
-              onChange={e => updateData({ cot: e.target.value })}
+              onChange={e => updateCot(e.target.value)}
             />
             <Input
               label="ĐZ (đường dây)"
               value={data.dz}
-              onChange={e => updateData({ dz: e.target.value })}
+              onChange={e => updateDz(e.target.value)}
             />
           </div>
         </div>
 
-        {/* Ngày lập */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <DateMaskInput
             label="Ngày lập (dd/mm/yyyy)"
@@ -112,7 +182,6 @@ export const CoverPageForm: React.FC = () => {
           />
         </div>
 
-        {/* Người lập / kiểm tra / đội trưởng */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <Input
             label="Người lập"

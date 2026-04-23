@@ -128,7 +128,7 @@ export interface AppNotification {
   userId: string;
   actorId: string | null;
   actor: FollowUserSummary | null;
-  type: 'follow' | 'friend_request' | 'friend_accept' | 'document_download' | 'post_like' | 'post_comment' | 'post_share' | 'comment_like';
+  type: 'follow' | 'friend_request' | 'friend_accept' | 'document_download' | 'post_like' | 'post_comment' | 'post_share' | 'comment_like' | 'admin_post';
   entityType: 'user' | 'friend_request' | 'document' | 'post' | 'comment';
   entityId: string;
   dataJson: Record<string, any>;

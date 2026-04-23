@@ -7,6 +7,7 @@ import { PATCTCData } from '../types';
 import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { formatDateTime } from '../utils/date';
 import { getAuthHeaders } from '../utils/api';
+import { exportPatctcPdf } from '../utils/exportPatctcPdf';
 
 const STATUS_MAP = {
   draft: { label: 'Bản nháp', color: 'zinc', icon: Edit3 },
@@ -95,24 +96,7 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
       }
 
       const parsed = JSON.parse(doc.dataSnapshot);
-      const res = await fetch('/api/export/pdf', {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(parsed),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
-        throw new Error(errorData.error || 'Server error');
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `PATCTC_${parsed.soVb || 'export'}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await exportPatctcPdf(parsed);
     } catch {
       alert('Không thể tải file PDF');
     }

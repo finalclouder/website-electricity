@@ -4,7 +4,7 @@ import { useStore } from '../../store/useStore';
 import { Accordion, Input, Checkbox } from '../UI';
 
 export const ToolsForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection } = useStore();
+  const { data, updateData, activeSection, toggleSection, scrollPreviewToSection } = useStore();
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
   const updateTool = (id: string, updates: any) => {
@@ -37,6 +37,8 @@ export const ToolsForm: React.FC = () => {
       isOpen={activeSection === 'dung-cu'}
       onToggle={() => toggleSection('dung-cu')}
       icon={<Wrench size={18} />}
+      sectionId="dung-cu"
+      onInputFocus={() => scrollPreviewToSection('dung-cu')}
     >
       <div className="space-y-3">
         {data.tools.map((tool, idx) => (
@@ -79,7 +81,7 @@ export const ToolsForm: React.FC = () => {
                       updateTool(tool.id, { quantity: raw === '' ? ('' as any) : parseFloat(raw) });
                     }}
                     onBlur={() => {
-                      if (tool.quantity === '' || tool.quantity === undefined || isNaN(Number(tool.quantity))) {
+                      if ((tool.quantity as any) === '' || tool.quantity === undefined || isNaN(Number(tool.quantity))) {
                         updateTool(tool.id, { quantity: 0 });
                       }
                     }}

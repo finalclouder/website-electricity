@@ -714,7 +714,7 @@ export const postDb = {
   async findById(id: string) {
     const { data: post, error } = await getSupabase()
       .from('posts')
-      .select('id, author_id')
+      .select('id, author_id, images')
       .eq('id', id)
       .maybeSingle();
 
@@ -726,6 +726,7 @@ export const postDb = {
       id: post.id,
       authorId: post.author_id,
       authorName: author?.name || '',
+      images: safeJsonParse(post.images, []) as string[],
     };
   },
 

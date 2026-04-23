@@ -8,6 +8,7 @@ import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { parseAppDate, timeAgo } from '../utils/date';
 import { api, getAuthHeaders } from '../utils/api';
 import { useNavigationStore } from '../store/useNavigationStore';
+import { exportPatctcPdf } from '../utils/exportPatctcPdf';
 
 function getInitials(name?: string): string {
   if (!name) return '?';
@@ -502,24 +503,7 @@ export const ProfilePage: React.FC<{ viewingUserId?: string; onBack?: () => void
       }
 
       const parsed = JSON.parse(doc.dataSnapshot);
-      const res = await fetch('/api/export/pdf', {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(parsed),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: 'Server error' }));
-        throw new Error(errorData.error || 'Server error');
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `PATCTC_${parsed.soVb || 'export'}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await exportPatctcPdf(parsed);
     } catch {
       alert('Không thể tải file PDF');
     }

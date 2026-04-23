@@ -130,6 +130,7 @@ export interface PATCTCData {
   loaiXa: string;
   loaiSu: string;
   loaiDay: string;
+  phuongThucNgayLamViec: string[];
   hienTrang: string;
   diaBan: string;
   dzNguon: string;

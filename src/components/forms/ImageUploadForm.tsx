@@ -5,25 +5,31 @@ import { Accordion } from '../UI';
 import { ConstructionImage } from '../../types';
 
 export const ImageUploadForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection } = useStore();
+  const { data, updateData, activeSection, toggleSection, scrollPreviewToSection } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const newImage: ConstructionImage = {
-          id: Date.now().toString() + Math.random().toString(36).slice(2),
-          url: ev.target?.result as string,
-          name: file.name,
-          scalePercent: 100
+    const readers = Array.from(files).map(file =>
+      new Promise<ConstructionImage>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          resolve({
+            id: Date.now().toString() + Math.random().toString(36).slice(2),
+            url: ev.target?.result as string,
+            name: file.name,
+            scalePercent: 100
+          });
         };
-        updateData({ images: [...data.images, newImage] });
-      };
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      })
+    );
+
+    Promise.all(readers).then(newImages => {
+      const current = useStore.getState().data.images;
+      updateData({ images: [...current, ...newImages] });
     });
 
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -47,6 +53,8 @@ export const ImageUploadForm: React.FC = () => {
       isOpen={activeSection === 'hinh-anh'}
       onToggle={() => toggleSection('hinh-anh')}
       icon={<FolderOpen size={18} />}
+      sectionId="hinh-anh"
+      onInputFocus={() => scrollPreviewToSection('hinh-anh')}
     >
       <div className="space-y-4">
         <input

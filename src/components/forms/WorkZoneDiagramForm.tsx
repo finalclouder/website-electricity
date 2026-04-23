@@ -5,16 +5,15 @@ import { Accordion } from '../UI';
 import { WorkZoneDiagram } from '../../types';
 
 export const WorkZoneDiagramForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection, isUploadingPdf, setIsUploadingPdf } = useStore();
+  const { data, updateData, activeSection, toggleSection, isUploadingPdf, setIsUploadingPdf, scrollPreviewToSection } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setIsUploadingPdf(true);
     try {
-      const arrayBuffer = await file.arrayBuffer();
       const pdfjsLib = await import('pdfjs-dist');
 
       // Set worker
@@ -23,27 +22,31 @@ export const WorkZoneDiagramForm: React.FC = () => {
         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
       }
 
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const diagrams: WorkZoneDiagram[] = [];
+      const allDiagrams: WorkZoneDiagram[] = [];
 
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 2 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d')!;
-        await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+      for (const file of Array.from(files)) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-        diagrams.push({
-          id: `${Date.now()}_${i}`,
-          fileName: file.name,
-          pageNumber: i,
-          imageData: canvas.toDataURL('image/jpeg', 0.9)
-        });
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d')!;
+          await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+
+          allDiagrams.push({
+            id: `${Date.now()}_${file.name}_${i}`,
+            fileName: file.name,
+            pageNumber: i,
+            imageData: canvas.toDataURL('image/jpeg', 0.9)
+          });
+        }
       }
 
-      updateData({ workZoneDiagrams: [...data.workZoneDiagrams, ...diagrams] });
+      updateData({ workZoneDiagrams: [...data.workZoneDiagrams, ...allDiagrams] });
     } catch (err) {
       console.error('Error uploading PDF:', err);
       alert('Lỗi khi đọc file PDF. Vui lòng thử lại.');
@@ -63,12 +66,15 @@ export const WorkZoneDiagramForm: React.FC = () => {
       isOpen={activeSection === 'so-do'}
       onToggle={() => toggleSection('so-do')}
       icon={<Image size={18} />}
+      sectionId="so-do"
+      onInputFocus={() => scrollPreviewToSection('so-do')}
     >
       <div className="space-y-4">
         <input
           ref={fileInputRef}
           type="file"
           accept=".pdf"
+          multiple
           onChange={handlePdfUpload}
           className="hidden"
         />

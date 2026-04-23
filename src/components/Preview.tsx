@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { PATCTCData } from '../types';
 import { WORK_TYPES } from '../constants';
 import { clsx } from 'clsx';
@@ -6,6 +6,7 @@ import { formatDateSlash, getDateParts } from '../utils/date';
 import { cleanJobItem, ensureLocation, formatJobItem, HANG_MUC_SUFFIX, SHORT_HOTLINE_SUFFIX, toTitleCase } from '../utils/patctcFormat';
 import { PreviewPage } from './preview/PreviewPage';
 import { PreviewToolbar } from './preview/PreviewToolbar';
+import { useStore } from '../store/useStore';
 
 interface PreviewProps {
   data: PATCTCData;
@@ -16,7 +17,21 @@ interface PreviewProps {
 
 export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, setZoom }) => {
   const [debugMode, setDebugMode] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const previewScrollTick = useStore(s => s.previewScrollTick);
   let currentPage = 0;
+
+  // Auto-scroll preview to the active section when it changes or when explicitly triggered
+  useEffect(() => {
+    if (!activeSection) return;
+    const target = document.getElementById(`preview-${activeSection}`);
+    if (target && scrollContainerRef.current) {
+      const timer = setTimeout(() => {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeSection, previewScrollTick]);
   const ngayLapParts = getDateParts(data.ngayLap) ?? { day: '', month: '', year: '' };
   
   const getCanCuItems = () => {
@@ -41,14 +56,14 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
   const canCuItems = getCanCuItems();
 
-  const renderPage = (content: React.ReactNode, id: string) => {
+  const renderPage = (content: React.ReactNode, id: string, sectionIds?: string[]) => {
     currentPage++;
     const pageNum = currentPage;
     return (
       <PreviewPage
         key={id}
         id={id}
-        isActive={activeSection === id}
+        isActive={activeSection === id || (sectionIds?.includes(activeSection) ?? false)}
         zoom={zoom}
         debugMode={debugMode}
         pageNum={pageNum}
@@ -77,7 +92,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         setDebugMode={setDebugMode}
       />
 
-      <div className="flex-1 overflow-y-auto p-12 scroll-smooth bg-zinc-200/50">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-12 scroll-smooth bg-zinc-200/50">
         {/* Trang bìa */}
         {renderPage((
           <div className="flex flex-col h-full font-times text-black">
@@ -220,6 +235,12 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
                 {data.mach === "Mạch kép" && data.diChungCot && ` (đi chung cột ${data.diChungCot})`} đang được cấp điện từ đường dây ĐZ {data.dz} qua MC {data.mc}.
               </span>
             </div>
+            {data.phuongThucNgayLamViec.map((pt, idx) => pt.trim() && (
+              <div key={idx} className="pl-[2.54cm] flex items-start">
+                <span className="w-[0.5cm] flex-shrink-0">+</span>
+                <span className="flex-1">Phương thức yêu cầu ngày làm việc {pt}</span>
+              </div>
+            ))}
             <div className="pl-[2.54cm] flex items-start">
               <span className="w-[0.5cm] flex-shrink-0">-</span>
               <span className="flex-1">
@@ -271,18 +292,19 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         <React.Fragment key={img.id}>
           {renderPage((
             <div className="flex items-center justify-center w-full h-[25.7cm]">
-              <img 
-                src={img.url} 
-                alt={img.name} 
-                style={{ 
-                  width: `${Math.min(100, img.scalePercent)}%`, 
-                  height: `${Math.min(100, img.scalePercent)}%` 
+              {idx === 0 && <div id="preview-hinh-anh" />}
+              <img
+                src={img.url}
+                alt={img.name}
+                style={{
+                  width: `${Math.min(100, img.scalePercent)}%`,
+                  height: `${Math.min(100, img.scalePercent)}%`
                 }}
                 className="object-contain"
                 referrerPolicy="no-referrer"
               />
             </div>
-          ), `hinh-anh-${idx}`)}
+          ), `hinh-anh-${idx}`, idx === 0 ? ['hinh-anh'] : undefined)}
         </React.Fragment>
       ))}
 
@@ -449,6 +471,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
             type: 'content',
             lineCount: 1.5,
             isHeading: true,
+            ...(jobIdx === 0 && { sectionId: 'rui-ro' }),
             render: () => <h4 className="font-bold italic mt-2">a. Nhận diện rủi ro, biện pháp phòng tránh:</h4>
           });
 
@@ -466,12 +489,12 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
                 <tr key={risk.id}>
                   <td className="border border-black p-1 text-center align-middle">{idx + 1}</td>
                   <td className="border border-black p-1 text-left align-top">{risk.location}</td>
-                  <td className="border border-black p-1 text-left align-top">
+                  <td className="border border-black p-1 text-left align-top whitespace-pre-wrap">
                     {risk.details.map((d, dIdx) => (
                       <div key={d.id} className={dIdx > 0 ? "mt-1" : ""}>{d.hazard}</div>
                     ))}
                   </td>
-                  <td className="border border-black p-1 text-left align-top">
+                  <td className="border border-black p-1 text-left align-top whitespace-pre-wrap">
                     {risk.details.map((d, dIdx) => (
                       <div key={d.id} className={dIdx > 0 ? "mt-1" : ""}>{d.measure}</div>
                     ))}
@@ -508,7 +531,12 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
           const currentMC = data.hotlineSafetyMeasures[jobIdx]?.mc || data.mc || data.dz;
           const mcText = `- Khóa chức năng TĐL (F79) của ĐKBV MC ${currentMC}.`;
-          const extraMeasures = data.hotlineSafetyMeasures[jobIdx]?.extraMeasures || [];
+          const safetyMeasureText = data.hotlineSafetyMeasures[jobIdx]?.safetyMeasure || '';
+          const extraMeasuresRaw = data.hotlineSafetyMeasures[jobIdx]?.extraMeasures || [];
+          const extraMeasures = [
+            ...(safetyMeasureText.trim() ? [`- ${safetyMeasureText.trim()}`] : []),
+            ...extraMeasuresRaw
+          ];
           const measureLines = estimateLines(mcText, 60) + extraMeasures.reduce((acc, m) => acc + estimateLines(m, 60), 0);
           const jobItemLines = estimateLines(fullJobItem, 25);
           const hotlineRowLines = Math.max(measureLines, jobItemLines, 1);
@@ -543,7 +571,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
           items.push({
             type: 'content',
-            lineCount: 2,
+            lineCount: 5,
             render: () => (
               <div className="mt-2 text-sm">
                 <div>- Lưu ý: Nếu đến ngày làm việc mà phương thức thay đổi thì khóa tự đóng lại của ĐKBV các MC cấp điện cho khu vực làm việc của ngày công tác đó. Khi máy cắt nhảy không được đóng lại bằng tay.</div>
@@ -557,35 +585,31 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
             type: 'content',
             lineCount: 2,
             isHeading: true,
+            ...(jobIdx === 0 && { sectionId: 'trinh-tu' }),
             render: () => <h4 className="font-bold italic mt-4">c. Biện pháp kỹ thuật để làm công việc (trình tự thi công):</h4>
           });
 
-          const seqData = (data.jobItems.length > 1 && data.sequences) 
-            ? (data.sequences[jobIdx + 1] || { eyeCheckText: undefined, guongKiemTra: "", bocCachDienBlocks: [], dieuKhienGauBlocks: [], thaoBocCachDienBlocks: [] })
-            : { 
-                eyeCheckText: data.eyeCheckText,
-                guongKiemTra: data.guongKiemTra, 
-                bocCachDienBlocks: data.bocCachDienBlocks, 
-                dieuKhienGauBlocks: data.dieuKhienGauBlocks, 
-                thaoBocCachDienBlocks: data.thaoBocCachDienBlocks 
-              };
+          const seqData = data.sequences?.[jobIdx + 1]
+            || { eyeCheckText: data.eyeCheckText, guongKiemTra: data.guongKiemTra, bocCachDienBlocks: data.bocCachDienBlocks, dieuKhienGauBlocks: data.dieuKhienGauBlocks, thaoBocCachDienBlocks: data.thaoBocCachDienBlocks };
 
+          const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
           const allSteps: string[] = [];
-          
-          if (seqData.eyeCheckText !== undefined && seqData.eyeCheckText.trim() !== "") {
+
+          if (!isHM2 && seqData.eyeCheckText !== undefined && seqData.eyeCheckText.trim() !== "") {
             const text = seqData.eyeCheckText.trim();
             const formattedText = `Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`;
             allSteps.push(formattedText);
           }
 
           allSteps.push("Hai công nhân leo lên gàu đã đeo găng tay và vai áo cao su cách điện và mang theo các dụng cụ, trang bị bảo vệ cá nhân cần thiết, móc dây an toàn chắc chắn.");
-          
-          const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
           if (!isHM2) {
-            const guongText = seqData.guongKiemTra 
-              ? ` kiểm tra các vị trí, ${seqData.guongKiemTra}, xem có gì bất thường không.` 
+            const guongText = seqData.guongKiemTra
+              ? ` kiểm tra các vị trí, ${seqData.guongKiemTra}, xem có gì bất thường không.`
               : " kiểm tra các vị trí.";
             allSteps.push(`Điều khiển gầu đến vị trí phù hợp dùng gương lắp vào sào cách điện${guongText}`);
+          } else if (seqData.eyeCheckText && seqData.eyeCheckText.trim() !== "") {
+            const text = seqData.eyeCheckText.trim();
+            allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
           }
           
           seqData.bocCachDienBlocks.forEach(block => {
@@ -798,6 +822,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
               lineCount: 1,
               isHeading: true,
               forceNewPage: true,
+              sectionId: 'nhan-su',
               render: () => <h2 className="font-bold text-center">PHỤ LỤC 1</h2>
             });
             items.push({
@@ -922,6 +947,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
               lineCount: 1,
               isHeading: true,
               forceNewPage: true,
+              sectionId: 'dung-cu',
               render: () => <h2 className="font-bold text-center">PHỤ LỤC 2</h2>
             });
             items.push({
@@ -942,7 +968,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
             });
             items.push({
               type: 'blank',
-              lineCount: 1
+              count: 1
             });
           } else {
             items.push({
@@ -1007,6 +1033,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
               lineCount: 2,
               isHeading: true,
               forceNewPage: pIdx > 0, // Only force new page for subsequent material pages
+              ...(pIdx === 0 && { sectionId: 'vat-tu' }),
               render: () => (
                 <div className="materials-table">
                   <h3 className="font-bold mt-4">
@@ -1059,6 +1086,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
           lineCount: 5,
           isHeading: true,
           forceNewPage: true,
+          sectionId: 'khao-sat',
           render: () => (
             <div className="bbks-section">
               <div className="text-center font-bold uppercase">
@@ -1317,10 +1345,14 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
           
           const currentMC = data.hotlineSafetyMeasures?.[idx]?.mc || data.mc || data.dz;
           const mcText = `- Khóa chức năng TĐL (F79) của ĐKBV MC ${currentMC}.`;
-          
-          // Lấy các biện pháp bổ sung từ Mục III.b (không copy HM1 sang HM2)
-          const extraMeasures = data.hotlineSafetyMeasures?.[idx]?.extraMeasures || [];
-          
+
+          const safetyMeasureText8 = data.hotlineSafetyMeasures?.[idx]?.safetyMeasure || '';
+          const extraMeasuresRaw8 = data.hotlineSafetyMeasures?.[idx]?.extraMeasures || [];
+          const extraMeasures = [
+            ...(safetyMeasureText8.trim() ? [`- ${safetyMeasureText8.trim()}`] : []),
+            ...extraMeasuresRaw8
+          ];
+
           const measures = [mcText, ...extraMeasures.filter(m => m && m.trim())];
 
           const measureLines = estimateLines(mcText, 37) + extraMeasures.reduce((acc, m) => acc + estimateLines(m, 37), 0);
@@ -1525,6 +1557,9 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         // Extract auto-fill requests from section 8 (extraMeasures)
         const autoRequests: string[] = [];
         data.hotlineSafetyMeasures?.forEach(measure => {
+          if (measure.safetyMeasure && measure.safetyMeasure.trim()) {
+            autoRequests.push(measure.safetyMeasure.trim());
+          }
           if (measure.extraMeasures) {
             measure.extraMeasures.forEach(m => {
               if (m && m.trim()) {
@@ -1616,7 +1651,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => <div className="pl-6">12.2.3: Cử người CHTT, người GSATĐ nhận hiện trường làm việc tại hiện trường.</div>
         });
         items.push({
@@ -1626,7 +1661,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => <div className="pl-6">12.2.5: Phối hợp với Người cho phép chụp ảnh biện pháp an toàn hiện trường làm việc.</div>
         });
         items.push({
@@ -1641,7 +1676,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => <div className="pl-6">12.2.8: Thực hiện đủ và đúng nội dung công việc trong phạm vi cho phép công tác.</div>
         });
         items.push({
@@ -1651,18 +1686,19 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => <div className="pl-6">12.2.10: Sử dụng đầy đủ trang bị, phương tiện dụng cụ làm việc; phương tiện bảo vệ cá nhân, kỷ luật lao động.</div>
         });
 
         items.push({
           type: 'content',
           lineCount: 1,
+          isHeading: true,
           render: () => <div className="font-bold pl-4 italic underline">12.3. Đối với (các) đơn vị điều độ (nếu có) :</div>
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => (
             <div className="pl-6">
               + Phương thức kết dây hiện tại: Cột {data.cot} ĐZ {data.dz}, đang được cấp điện từ đường dây {data.ks_dzNguon || data.dzNguon} qua MC {data.mc}.
@@ -1671,7 +1707,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => (
             <div className="pl-6">
               + Kiểm tra đã khóa chức năng tự động đóng lại (F79) của ĐKBV MC {data.mc}. Khi máy cắt nhảy không được đóng lại bằng tay.
@@ -1680,7 +1716,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         });
         items.push({
           type: 'content',
-          lineCount: 1,
+          lineCount: 2,
           render: () => (
             <div className="pl-6">
               - Nếu đến ngày làm việc mà phương thức thay đổi thì khóa tự đóng lại của ĐKBV các MC cấp điện cho khu vực làm việc của ngày công tác đó.
@@ -1691,6 +1727,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         items.push({
           type: 'content',
           lineCount: 1,
+          isHeading: true,
           render: () => <div className="font-bold pl-4 italic underline">12.4. Những nội dung khác liên quan đến công việc:</div>
         });
         items.push({
@@ -1769,10 +1806,12 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
         const pages: React.ReactNode[] = [];
         let currentPageItems: React.ReactNode[] = [];
         let currentLines = 0;
+        let currentPageSectionIds: string[] = [];
         let pNum = 4 + data.images.length; // Starting page number for this section
 
         const flushPage = () => {
           if (currentPageItems.length > 0) {
+            const sectionIds = [...currentPageSectionIds];
             pages.push(renderPage(
               <div className="flex flex-col font-times text-[13pt] leading-[1.3] text-left">
                 {pNum === 4 + data.images.length && <BlankLine count={3} />}
@@ -1782,11 +1821,13 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
                   </div>
                 ))}
               </div>,
-              `paginated-${pNum}`
+              `paginated-${pNum}`,
+              sectionIds
             ));
             pNum++;
             currentPageItems = [];
             currentLines = 0;
+            currentPageSectionIds = [];
           }
         };
 
@@ -1805,7 +1846,13 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
               flushPage();
             }
 
-            currentPageItems.push(<React.Fragment key={`content-${idx}`}>{item.render()}</React.Fragment>);
+            currentPageItems.push(
+              <React.Fragment key={`content-${idx}`}>
+                {item.sectionId && <div id={`preview-${item.sectionId}`} />}
+                {item.render()}
+              </React.Fragment>
+            );
+            if (item.sectionId) currentPageSectionIds.push(item.sectionId);
             currentLines += item.lineCount;
           } else if (item.type === 'splittable-text-block') {
             let textToProcess = item.text;
@@ -1910,23 +1957,25 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
         // Section VI: Sơ đồ vùng làm việc
         if (data.workZoneDiagrams && data.workZoneDiagrams.length > 0) {
-          data.workZoneDiagrams.forEach((diagram) => {
+          data.workZoneDiagrams.forEach((diagram, diagramIdx) => {
             pages.push(renderPage(
               <div className="flex flex-col h-full w-full items-center justify-center relative">
+                {diagramIdx === 0 && <div id="preview-so-do" />}
                 {debugMode && (
                   <div className="absolute top-0 left-0 text-red-500 text-[10pt] font-times bg-red-50 px-2 py-1 rounded border border-red-200 z-10 print:hidden">
                     DEBUG: VI. SƠ ĐỒ VÙNG LÀM VIỆC ({diagram.fileName} - P{diagram.pageNumber})
                   </div>
                 )}
                 <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
-                  <img 
-                    src={diagram.imageData} 
+                  <img
+                    src={diagram.imageData}
                     alt={`Sơ đồ ${diagram.fileName} - Trang ${diagram.pageNumber}`}
                     className="max-w-full max-h-full object-contain"
                   />
                 </div>
               </div>,
-              `work-zone-${diagram.id}`
+              `work-zone-${diagram.id}`,
+              diagramIdx === 0 ? ['so-do'] : undefined
             ));
           });
         }

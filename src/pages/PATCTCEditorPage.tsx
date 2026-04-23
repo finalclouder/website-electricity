@@ -19,9 +19,8 @@ import {
   WorkZoneDiagramForm
 } from '../components/forms';
 import { SiteSurveySection } from '../components/SiteSurveySection';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { getAuthHeaders } from '../utils/api';
+import { exportPatctcPdf } from '../utils/exportPatctcPdf';
 
 import { timeAgo } from '../utils/date';
 
@@ -152,35 +151,8 @@ export const PATCTCEditorPage: React.FC = () => {
     }
   }, [data.jobItems.length, data.riskTableJob1.length, data.riskTableJob2.length, data.cot, data.dz]);
 
-  // Auto-sync ks_thanhPhanHotline with personnel CHTT-GSAT
-  useEffect(() => {
-    const chttMembers = data.personnel
-      .filter(p => p.role === 'CHTT-GSAT' || p.role === 'CHTT - GSAT')
-      .sort((a, b) => (a.chttSelectedAt || 0) - (b.chttSelectedAt || 0));
-
-    if (chttMembers.length === 0) {
-      const currentPlaceholder = data.ks_thanhPhanHotline;
-      if (currentPlaceholder.length !== 1 || currentPlaceholder[0].id !== 'placeholder') {
-        updateData({
-          ks_thanhPhanHotline: [{ id: 'placeholder', name: '', role: 'CHTT – GSAT – Lập PA' }]
-        });
-      }
-      return;
-    }
-
-    const newList = chttMembers.map((p, idx) => ({
-      id: p.id,
-      name: p.name,
-      role: idx === 0 ? 'CHTT – GSAT – Lập PA' : 'CHTT – GSAT'
-    }));
-
-    // Only update if actually changed
-    const currentNames = data.ks_thanhPhanHotline.map(p => `${p.name}|${p.role}`).join(',');
-    const newNames = newList.map(p => `${p.name}|${p.role}`).join(',');
-    if (currentNames !== newNames) {
-      updateData({ ks_thanhPhanHotline: newList });
-    }
-  }, [data.personnel]);
+  // Note: ks_thanhPhanHotline is now managed manually via SiteSurveySection
+  // using the "Cập nhật từ Phụ lục 1" button, matching original behavior.
 
   // === Export PDF ===
   const exportPdf = async () => {
@@ -189,68 +161,8 @@ export const PATCTCEditorPage: React.FC = () => {
 
     setIsExporting(true);
     try {
-      await document.fonts.ready;
+      await exportPatctcPdf(data);
 
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pages = document.querySelectorAll('.a4-page');
-
-      const offscreen = document.createElement('div');
-      offscreen.style.position = 'fixed';
-      offscreen.style.left = '-9999px';
-      offscreen.style.top = '0';
-      offscreen.style.width = '21cm';
-      offscreen.style.zIndex = '-1';
-      document.body.appendChild(offscreen);
-
-      for (let i = 0; i < pages.length; i++) {
-        const clone = pages[i].cloneNode(true) as HTMLElement;
-        clone.style.transform = 'none';
-        clone.style.boxShadow = 'none';
-        clone.style.margin = '0';
-        clone.style.borderRadius = '0';
-        clone.style.border = 'none';
-
-        // Hide debug overlays
-        clone.querySelectorAll('.print\\:hidden').forEach(el => {
-          (el as HTMLElement).style.display = 'none';
-        });
-
-        offscreen.appendChild(clone);
-
-        const canvas = await html2canvas(clone, {
-          scale: 3,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          onclone: (doc: Document) => {
-            // Fix oklch colors for html2canvas
-            const allElements = doc.querySelectorAll('*');
-            allElements.forEach(el => {
-              const style = window.getComputedStyle(el);
-              const color = style.color;
-              const bg = style.backgroundColor;
-              if (color && color.includes('oklch')) {
-                (el as HTMLElement).style.color = '#000000';
-              }
-              if (bg && bg.includes('oklch')) {
-                (el as HTMLElement).style.backgroundColor = '#ffffff';
-              }
-            });
-          }
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const pdfWidth = 210;
-        const pdfHeight = 297;
-
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-
-        offscreen.removeChild(clone);
-      }
-
-      document.body.removeChild(offscreen);
-      pdf.save(`PATCTC_${data.soVb}.pdf`);
     } catch (err) {
       console.error('Export error:', err);
       alert('Lỗi khi xuất PDF. Vui lòng thử lại.');

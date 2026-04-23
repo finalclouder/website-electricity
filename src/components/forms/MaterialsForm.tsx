@@ -4,7 +4,7 @@ import { useStore } from '../../store/useStore';
 import { Accordion, Input } from '../UI';
 
 export const MaterialsForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection } = useStore();
+  const { data, updateData, activeSection, toggleSection, scrollPreviewToSection } = useStore();
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
   const updateMaterial = (id: string, updates: any) => {
@@ -35,6 +35,8 @@ export const MaterialsForm: React.FC = () => {
       isOpen={activeSection === 'vat-tu'}
       onToggle={() => toggleSection('vat-tu')}
       icon={<Truck size={18} />}
+      sectionId="vat-tu"
+      onInputFocus={() => scrollPreviewToSection('vat-tu')}
     >
       <div className="space-y-4">
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm">

@@ -14,9 +14,13 @@ interface AccordionProps {
   isOpen: boolean;
   onToggle: () => void;
   icon?: React.ReactNode;
+  /** Optional section ID — when any input inside gains focus, activeSection is set so Preview scrolls */
+  sectionId?: string;
+  /** Called when user focuses any input inside this accordion — used to sync Preview scroll */
+  onInputFocus?: () => void;
 }
 
-export const Accordion: React.FC<AccordionProps> = ({ title, children, isOpen, onToggle, icon }) => {
+export const Accordion: React.FC<AccordionProps> = ({ title, children, isOpen, onToggle, icon, sectionId, onInputFocus }) => {
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -28,8 +32,12 @@ export const Accordion: React.FC<AccordionProps> = ({ title, children, isOpen, o
     }
   }, [isOpen]);
 
+  // When user focuses any input/textarea inside this accordion,
+  // notify parent so Preview panel can auto-scroll to the corresponding page.
+  const handleFocusCapture = onInputFocus;
+
   return (
-    <div 
+    <div
       ref={ref}
       className={cn(
       "border-b border-zinc-200 last:border-0 transition-all duration-300",
@@ -78,7 +86,7 @@ export const Accordion: React.FC<AccordionProps> = ({ title, children, isOpen, o
             transition={{ duration: 0.3, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="p-4 pt-0 space-y-4">
+            <div className="p-4 pt-0 space-y-4" onFocusCapture={handleFocusCapture}>
               {children}
             </div>
           </motion.div>
@@ -128,99 +136,121 @@ export const Checkbox: React.FC<{ label: string; checked: boolean; onChange: (ch
   </label>
 );
 
-/**
- * DateMaskInput — masked input for dd/mm/yyyy format.
- * Displays "__/__/____" placeholder, user types digits left-to-right,
- * slashes are inserted automatically. Backspace removes digits right-to-left.
- */
 export const DateMaskInput: React.FC<{
   label?: string;
-  value: string;          // stored as "dd/mm/yyyy" or partial
+  value: string;
   onChange: (value: string) => void;
   className?: string;
 }> = ({ label, value, onChange, className }) => {
-  // Extract only digits from value
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const pendingCursor = React.useRef<number | null>(null);
+
   const digits = (value || '').replace(/\D/g, '');
 
-  // Build display string with mask
-  const formatDisplay = (d: string): string => {
-    const chars = d.padEnd(8, '_').split('');
-    return `${chars[0]}${chars[1]}/${chars[2]}${chars[3]}/${chars[4]}${chars[5]}${chars[6]}${chars[7]}`;
+  const fmt = (d: string) => {
+    const c = d.padEnd(8, '_').split('');
+    return `${c[0]}${c[1]}/${c[2]}${c[3]}/${c[4]}${c[5]}${c[6]}${c[7]}`;
   };
 
-  // Build stored value (dd/mm/yyyy) from digits
-  const formatValue = (d: string): string => {
-    if (d.length === 0) return '';
-    let result = '';
+  const toStored = (d: string) => {
+    if (!d) return '';
+    let r = '';
     for (let i = 0; i < d.length && i < 8; i++) {
-      if (i === 2 || i === 4) result += '/';
-      result += d[i];
+      if (i === 2 || i === 4) r += '/';
+      r += d[i];
     }
-    return result;
+    return r;
   };
 
-  const display = formatDisplay(digits);
+  const digitToChar = (n: number) => n <= 2 ? n : n <= 4 ? n + 1 : n + 2;
+  const charToDigit = (n: number) => n <= 2 ? n : n <= 5 ? n - 1 : n - 2;
 
-  // Calculate cursor position based on digit count
-  const getCursorPos = (digitCount: number): number => {
-    if (digitCount <= 2) return digitCount;
-    if (digitCount <= 4) return digitCount + 1; // after first /
-    return digitCount + 2; // after both /
+  const display = fmt(digits);
+
+  const setCursor = (pos: number) => {
+    pendingCursor.current = pos;
   };
 
-  const inputRef = React.useRef<HTMLInputElement>(null);
+  React.useLayoutEffect(() => {
+    if (pendingCursor.current !== null && inputRef.current) {
+      const p = pendingCursor.current;
+      inputRef.current.setSelectionRange(p, p);
+      pendingCursor.current = null;
+    }
+  });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Allow: Tab, Escape
     if (e.key === 'Tab' || e.key === 'Escape') return;
+    if (e.key === 'a' && (e.ctrlKey || e.metaKey)) return;
 
     e.preventDefault();
+    const el = inputRef.current;
+    if (!el) return;
+
+    const hasSelection = el.selectionStart !== el.selectionEnd;
 
     if (e.key === 'Backspace') {
-      if (digits.length > 0) {
-        const newDigits = digits.slice(0, -1);
-        onChange(formatValue(newDigits));
+      if (hasSelection) {
+        onChange('');
+        setCursor(0);
+      } else if (digits.length > 0) {
+        onChange(toStored(digits.slice(0, -1)));
+        setCursor(digitToChar(digits.length - 1));
       }
       return;
     }
 
     if (e.key === 'Delete') {
       onChange('');
+      setCursor(0);
       return;
     }
 
-    // Only accept digits
-    if (/^\d$/.test(e.key) && digits.length < 8) {
-      const newDigits = digits + e.key;
-      onChange(formatValue(newDigits));
-    }
-  };
-
-  // Set cursor position after render
-  React.useEffect(() => {
-    if (inputRef.current && document.activeElement === inputRef.current) {
-      const pos = getCursorPos(digits.length);
-      inputRef.current.setSelectionRange(pos, pos);
-    }
-  });
-
-  const handleFocus = () => {
-    setTimeout(() => {
-      if (inputRef.current) {
-        const pos = getCursorPos(digits.length);
-        inputRef.current.setSelectionRange(pos, pos);
+    if (e.key === 'ArrowLeft') {
+      if (el.selectionStart != null && el.selectionStart > 0) {
+        let p = el.selectionStart - 1;
+        if (p === 2 || p === 5) p--;
+        el.setSelectionRange(p, p);
       }
-    }, 0);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      if (el.selectionStart != null && el.selectionStart < display.length) {
+        let p = el.selectionStart + 1;
+        if (p === 3 || p === 6) p++;
+        el.setSelectionRange(p, p);
+      }
+      return;
+    }
+
+    if (!/^\d$/.test(e.key)) return;
+
+    if (hasSelection) {
+      onChange(toStored(e.key));
+      setCursor(digitToChar(1));
+      return;
+    }
+
+    if (digits.length >= 8) {
+      const dIdx = charToDigit(el.selectionStart || 0);
+      if (dIdx >= 0 && dIdx < 8) {
+        const nd = digits.slice(0, dIdx) + e.key + digits.slice(dIdx + 1);
+        onChange(toStored(nd));
+        setCursor(digitToChar(Math.min(dIdx + 1, 7)));
+      }
+      return;
+    }
+
+    onChange(toStored(digits + e.key));
+    setCursor(digitToChar(digits.length + 1));
   };
 
-  // Prevent paste of non-digit content
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text');
-    const pastedDigits = text.replace(/\D/g, '');
-    if (pastedDigits) {
-      const combined = (digits + pastedDigits).slice(0, 8);
-      onChange(formatValue(combined));
+    const pd = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 8);
+    if (pd) {
+      onChange(toStored(pd));
+      setCursor(digitToChar(pd.length));
     }
   };
 
@@ -233,9 +263,8 @@ export const DateMaskInput: React.FC<{
         inputMode="numeric"
         value={display}
         onKeyDown={handleKeyDown}
-        onFocus={handleFocus}
         onPaste={handlePaste}
-        onChange={() => {}}  // controlled via onKeyDown
+        onChange={() => {}}
         className={cn(
           "w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono tracking-wider",
           className

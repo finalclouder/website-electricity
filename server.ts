@@ -497,11 +497,11 @@ async function startServer() {
         width: opts.width,
         verticalAlign: opts.vAlign || VerticalAlign.TOP,
         borders: cellBorders,
-        children: texts.map(t => new Paragraph({
+        children: texts.flatMap(t => t.split('\n').map(line => new Paragraph({
           alignment: opts.align || AlignmentType.LEFT,
           spacing: { line: 260 },
-          children: [new TextRun({ text: t, font: "Times New Roman", size: opts.size || 26, bold: opts.bold || false })],
-        })),
+          children: [new TextRun({ text: line, font: "Times New Roman", size: opts.size || 26, bold: opts.bold || false })],
+        }))),
       });
 
       const noBorders = {
@@ -956,8 +956,13 @@ async function startServer() {
 
                 const currentMC = data.hotlineSafetyMeasures?.[jobIdx]?.mc || data.mc || data.dz;
                 const mcText = `- Khóa chức năng TĐL (F79) của ĐKBV MC ${currentMC}.`;
-                const extraMeasures: string[] = data.hotlineSafetyMeasures?.[jobIdx]?.extraMeasures || [];
-                const allMeasureTexts = [mcText, ...extraMeasures.filter((m: string) => m && m.trim())];
+                const safetyMeasureText = data.hotlineSafetyMeasures?.[jobIdx]?.safetyMeasure || '';
+                const extraMeasuresRaw: string[] = data.hotlineSafetyMeasures?.[jobIdx]?.extraMeasures || [];
+                const allMeasureTexts = [
+                  mcText,
+                  ...(safetyMeasureText.trim() ? [`- ${safetyMeasureText.trim()}`] : []),
+                  ...extraMeasuresRaw.filter((m: string) => m && m.trim())
+                ];
 
                 const hotlineHeaderRow = new TableRow({
                   children: [
@@ -998,9 +1003,8 @@ async function startServer() {
                 );
 
                 // Build allSteps
-                const seqData = (data.jobItems.length > 1 && data.sequences)
-                  ? (data.sequences[jobIdx + 1] || { eyeCheckText: undefined, guongKiemTra: "", bocCachDienBlocks: [], dieuKhienGauBlocks: [], thaoBocCachDienBlocks: [] })
-                  : {
+                const seqData = data.sequences?.[jobIdx + 1]
+                  || {
                       eyeCheckText: data.eyeCheckText,
                       guongKiemTra: data.guongKiemTra,
                       bocCachDienBlocks: data.bocCachDienBlocks || [],
@@ -1008,21 +1012,23 @@ async function startServer() {
                       thaoBocCachDienBlocks: data.thaoBocCachDienBlocks || [],
                     };
 
+                const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
                 const allSteps: string[] = [];
 
-                if (seqData.eyeCheckText !== undefined && seqData.eyeCheckText.trim() !== "") {
+                if (!isHM2 && seqData.eyeCheckText !== undefined && seqData.eyeCheckText.trim() !== "") {
                   const text = seqData.eyeCheckText.trim();
                   allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
                 }
 
                 allSteps.push("Hai công nhân leo lên gàu đã đeo găng tay và vai áo cao su cách điện và mang theo các dụng cụ, trang bị bảo vệ cá nhân cần thiết, móc dây an toàn chắc chắn.");
-
-                const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
                 if (!isHM2) {
                   const guongText = seqData.guongKiemTra
                     ? ` kiểm tra các vị trí, ${seqData.guongKiemTra}, xem có gì bất thường không.`
                     : " kiểm tra các vị trí.";
                   allSteps.push(`Điều khiển gầu đến vị trí phù hợp dùng gương lắp vào sào cách điện${guongText}`);
+                } else if (seqData.eyeCheckText && seqData.eyeCheckText.trim() !== "") {
+                  const text = seqData.eyeCheckText.trim();
+                  allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
                 }
 
                 (seqData.bocCachDienBlocks || []).forEach((block: any) => {
@@ -1403,7 +1409,12 @@ async function startServer() {
                     const currentMCv = data.hotlineSafetyMeasures?.[idx]?.mc || data.mc || data.dz;
                     const mcTextV = `- Khóa chức năng TĐL (F79) của ĐKBV MC ${currentMCv}.`;
                     const extraMeasuresV: string[] = data.hotlineSafetyMeasures?.[idx]?.extraMeasures || [];
-                    const allMeasures = [mcTextV, ...extraMeasuresV.filter((m: string) => m && m.trim())];
+                    const safetyMeasureV = data.hotlineSafetyMeasures?.[idx]?.safetyMeasure || '';
+                    const allMeasures = [
+                      mcTextV,
+                      ...(safetyMeasureV.trim() ? [`- ${safetyMeasureV.trim()}`] : []),
+                      ...extraMeasuresV.filter((m: string) => m && m.trim())
+                    ];
                     return new TableRow({
                       children: [
                         makeCell(String(idx + 1), { width: { size: 6, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
@@ -1510,6 +1521,9 @@ async function startServer() {
               ...(() => {
                 const autoReqs: string[] = [];
                 (data.hotlineSafetyMeasures || []).forEach((measure: any) => {
+                  if (measure.safetyMeasure && measure.safetyMeasure.trim()) {
+                    autoReqs.push(measure.safetyMeasure.trim());
+                  }
                   if (measure.extraMeasures) {
                     measure.extraMeasures.forEach((m: string) => {
                       if (m && m.trim()) autoReqs.push(m.trim());

@@ -5,44 +5,34 @@ import { Accordion, Input, Select } from '../UI';
 import { Personnel } from '../../types';
 
 export const PersonnelForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection } = useStore();
+  const {
+    data,
+    updateData,
+    activeSection,
+    toggleSection,
+    addPersonnel,
+    removePersonnel,
+    scrollPreviewToSection
+  } = useStore();
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
   const updatePerson = (id: string, updates: Partial<Personnel>) => {
     updateData({
-      personnel: data.personnel.map(p => {
-        if (p.id !== id) return p;
-        const updated = { ...p, ...updates };
-        // Handle CHTT-GSAT timestamp
+      personnel: data.personnel.map(person => {
+        if (person.id !== id) return person;
+        const updated = { ...person, ...updates };
+
         if (updates.role !== undefined) {
-          if ((updates.role === 'CHTT-GSAT' || updates.role === 'CHTT - GSAT') && p.role !== 'CHTT-GSAT' && p.role !== 'CHTT - GSAT') {
+          if ((updates.role === 'CHTT-GSAT' || updates.role === 'CHTT - GSAT') && person.role !== 'CHTT-GSAT' && person.role !== 'CHTT - GSAT') {
             updated.chttSelectedAt = Date.now();
           } else if (updates.role !== 'CHTT-GSAT' && updates.role !== 'CHTT - GSAT') {
             updated.chttSelectedAt = undefined;
           }
         }
+
         return updated;
       })
     });
-  };
-
-  const removePerson = (id: string) => {
-    if (data.personnel.length <= 1) return;
-    updateData({ personnel: data.personnel.filter(p => p.id !== id) });
-  };
-
-  const addPerson = () => {
-    const newPerson: Personnel = {
-      id: Date.now().toString(),
-      name: '',
-      gender: 'Nam',
-      birthYear: 1990,
-      role: 'NV',
-      job: 'Công nhân Hotline',
-      grade: '5/7',
-      safetyGrade: '5/5'
-    };
-    updateData({ personnel: [...data.personnel, newPerson] });
   };
 
   return (
@@ -51,11 +41,12 @@ export const PersonnelForm: React.FC = () => {
       isOpen={activeSection === 'nhan-su'}
       onToggle={() => toggleSection('nhan-su')}
       icon={<Users size={18} />}
+      sectionId="nhan-su"
+      onInputFocus={() => scrollPreviewToSection('nhan-su')}
     >
       <div className="space-y-3">
         {data.personnel.map((person, idx) => (
           <div key={person.id} className="bg-white border border-zinc-200 rounded-xl shadow-sm overflow-hidden">
-            {/* Header */}
             <button
               onClick={() => setExpandedId(expandedId === person.id ? null : person.id)}
               className="w-full flex items-center justify-between p-3 hover:bg-zinc-50 transition-colors"
@@ -70,7 +61,6 @@ export const PersonnelForm: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {/* Role quick toggle */}
                 <button
                   onClick={e => {
                     e.stopPropagation();
@@ -89,7 +79,6 @@ export const PersonnelForm: React.FC = () => {
               </div>
             </button>
 
-            {/* Expanded details */}
             {expandedId === person.id && (
               <div className="px-3 pb-3 space-y-3 border-t border-zinc-100 pt-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -108,10 +97,10 @@ export const PersonnelForm: React.FC = () => {
                     value={person.birthYear ?? ''}
                     onChange={e => {
                       const raw = e.target.value;
-                      updatePerson(person.id, { birthYear: raw === '' ? ('' as any) : parseInt(raw) });
+                      updatePerson(person.id, { birthYear: raw === '' ? ('' as any) : parseInt(raw, 10) });
                     }}
                     onBlur={() => {
-                      if (person.birthYear === '' || person.birthYear === undefined || isNaN(Number(person.birthYear))) {
+                      if (!Number.isFinite(Number(person.birthYear))) {
                         updatePerson(person.id, { birthYear: 1990 });
                       }
                     }}
@@ -134,7 +123,7 @@ export const PersonnelForm: React.FC = () => {
                   <Input label="Bậc ATĐ" value={person.safetyGrade} onChange={e => updatePerson(person.id, { safetyGrade: e.target.value })} />
                 </div>
                 <button
-                  onClick={() => removePerson(person.id)}
+                  onClick={() => removePersonnel(person.id)}
                   className="w-full py-2 text-sm text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-1"
                 >
                   <Trash2 size={14} /> Xóa nhân sự
@@ -145,7 +134,7 @@ export const PersonnelForm: React.FC = () => {
         ))}
 
         <button
-          onClick={addPerson}
+          onClick={addPersonnel}
           className="w-full py-3 border-2 border-dashed border-zinc-300 rounded-lg text-sm text-zinc-500 hover:border-blue-400 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
         >
           <Plus size={16} /> Thêm nhân sự

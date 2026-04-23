@@ -1,10 +1,18 @@
 import React from 'react';
-import { Truck } from 'lucide-react';
+import { Truck, Plus, X } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { Accordion, Input, Select } from '../UI';
 
 export const ConstructionDetailsForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection } = useStore();
+  const {
+    data,
+    updateData,
+    activeSection,
+    toggleSection,
+    updateCot,
+    updateDz,
+    scrollPreviewToSection
+  } = useStore();
 
   return (
     <Accordion
@@ -12,21 +20,22 @@ export const ConstructionDetailsForm: React.FC = () => {
       isOpen={activeSection === 'dac-diem'}
       onToggle={() => toggleSection('dac-diem')}
       icon={<Truck size={18} />}
+      sectionId="dac-diem"
+      onInputFocus={() => scrollPreviewToSection('dac-diem')}
     >
       <div className="space-y-6">
-        {/* Đường dây + Cột */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Thông tin đường dây</div>
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="ĐZ (đường dây)"
               value={data.dz}
-              onChange={e => updateData({ dz: e.target.value })}
+              onChange={e => updateDz(e.target.value)}
             />
             <Input
               label="Số cột"
               value={data.cot}
-              onChange={e => updateData({ cot: e.target.value })}
+              onChange={e => updateCot(e.target.value)}
             />
           </div>
           <Select
@@ -52,7 +61,6 @@ export const ConstructionDetailsForm: React.FC = () => {
           />
         </div>
 
-        {/* Thông số kỹ thuật */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Thông số kỹ thuật</div>
           <div className="grid grid-cols-2 gap-4">
@@ -66,16 +74,61 @@ export const ConstructionDetailsForm: React.FC = () => {
           <Input label="Loại dây" value={data.loaiDay} onChange={e => updateData({ loaiDay: e.target.value })} />
         </div>
 
-        {/* Hiện trạng + Địa bàn */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Hiện trạng & Vị trí</div>
-          <Input label="Hiện trạng" value={data.hienTrang} onChange={e => updateData({ hienTrang: e.target.value })} />
+          {data.phuongThucNgayLamViec.map((pt, idx) => (
+            <div key={idx} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                  Phương thức yêu cầu ngày làm việc #{idx + 1}
+                </label>
+                <button
+                  type="button"
+                  className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  onClick={() => {
+                    const updated = data.phuongThucNgayLamViec.filter((_, i) => i !== idx);
+                    updateData({ phuongThucNgayLamViec: updated });
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <textarea
+                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                rows={2}
+                value={pt}
+                onChange={e => {
+                  const updated = [...data.phuongThucNgayLamViec];
+                  updated[idx] = e.target.value;
+                  updateData({ phuongThucNgayLamViec: updated });
+                }}
+                placeholder="khi thực hiện công việc ... tại cột ... ĐZ ...: Được cấp điện từ lộ ..."
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+            onClick={() => updateData({ phuongThucNgayLamViec: [...data.phuongThucNgayLamViec, ''] })}
+          >
+            <Plus size={14} />
+            Thêm phương thức ngày làm việc
+          </button>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Hiện trạng</label>
+            <textarea
+              className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+              rows={2}
+              value={data.hienTrang}
+              onChange={e => updateData({ hienTrang: e.target.value })}
+              placeholder="Hiện trạng..."
+            />
+          </div>
           <Input label="Địa bàn" value={data.diaBan} onChange={e => updateData({ diaBan: e.target.value })} />
           <Input label="ĐZ nguồn" value={data.dzNguon} onChange={e => updateData({ dzNguon: e.target.value })} />
           <Input label="Phạm vi cấp điện" value={data.phamViCapDien} onChange={e => updateData({ phamViCapDien: e.target.value })} />
         </div>
 
-        {/* Giao thông */}
         <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
           <div className="text-sm font-bold text-zinc-700">Đặc điểm giao thông</div>
           <div className="grid grid-cols-2 gap-4">
