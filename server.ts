@@ -505,10 +505,10 @@ async function startServer() {
       });
 
       const noBorders = {
-        top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-        bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-        left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-        right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+        top: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+        bottom: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+        left: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+        right: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
       } as const;
 
       const formatBullet = (text: string) => {
@@ -556,12 +556,12 @@ async function startServer() {
               new Table({
                 width: { size: 100, type: WidthType.PERCENTAGE },
                 borders: {
-                  top: { style: BorderStyle.NONE },
-                  bottom: { style: BorderStyle.NONE },
-                  left: { style: BorderStyle.NONE },
-                  right: { style: BorderStyle.NONE },
-                  insideHorizontal: { style: BorderStyle.NONE },
-                  insideVertical: { style: BorderStyle.NONE },
+                  top: { style: BorderStyle.NIL },
+                  bottom: { style: BorderStyle.NIL },
+                  left: { style: BorderStyle.NIL },
+                  right: { style: BorderStyle.NIL },
+                  insideHorizontal: { style: BorderStyle.NIL },
+                  insideVertical: { style: BorderStyle.NIL },
                 },
                 rows: [
                   new TableRow({
@@ -572,19 +572,19 @@ async function startServer() {
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: "CÔNG TY ĐIỆN LỰC BẮC NINH", font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: "CÔNG TY ĐIỆN LỰC BẮC NINH", font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: fixedDonVi.toUpperCase(), font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: fixedDonVi.toUpperCase(), font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: "__________", font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: "__________", font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                         ],
@@ -595,19 +595,19 @@ async function startServer() {
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: "Độc lập - Tự do - Hạnh phúc", font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: "Độc lập - Tự do - Hạnh phúc", font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                           new Paragraph({
                             alignment: AlignmentType.CENTER,
                             children: [
-                              new TextRun({ text: "________________", font: "Times New Roman", size: 26, bold: true }),
+                              new TextRun({ text: "________________", font: "Times New Roman", size: 24, bold: true }),
                             ],
                           }),
                         ],
@@ -1069,13 +1069,49 @@ async function startServer() {
                   ],
                 });
 
-                const seqDataRows = allSteps.map((step, sIdx) => new TableRow({
-                  children: [
-                    makeCell(String(sIdx + 1), { width: { size: 6, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
-                    makeCell(step, { width: { size: 80, type: WidthType.PERCENTAGE } }),
-                    makeCell("", { width: { size: 14, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER }),
-                  ],
-                }));
+                const seqDataRows = allSteps.map((step, sIdx) => {
+                  const isBoldRow = (step.startsWith("Kiểm tra bằng mắt") || step.startsWith("Điều khiển gầu đến") || step.startsWith("Điều khiển gàu đến")) && !step.includes("...");
+                  const isSplitBold = step.startsWith("Bọc theo trình tự:") || step.startsWith("Tháo bọc theo trình tự:");
+
+                  let contentCell;
+                  if (isSplitBold) {
+                    const colonIndex = step.indexOf(":");
+                    const label = step.substring(0, colonIndex + 1);
+                    const value = step.substring(colonIndex + 1);
+                    contentCell = new TableCell({
+                      width: { size: 80, type: WidthType.PERCENTAGE },
+                      verticalAlign: VerticalAlign.TOP,
+                      borders: cellBorders,
+                      children: [new Paragraph({
+                        alignment: AlignmentType.LEFT,
+                        spacing: { line: 312 },
+                        children: [
+                          new TextRun({ text: label, font: "Times New Roman", size: 26 }),
+                          new TextRun({ text: value, font: "Times New Roman", size: 26, bold: true }),
+                        ],
+                      })],
+                    });
+                  } else {
+                    contentCell = new TableCell({
+                      width: { size: 80, type: WidthType.PERCENTAGE },
+                      verticalAlign: VerticalAlign.TOP,
+                      borders: cellBorders,
+                      children: [new Paragraph({
+                        alignment: AlignmentType.LEFT,
+                        spacing: { line: 312 },
+                        children: [new TextRun({ text: step, font: "Times New Roman", size: 26, bold: isBoldRow })],
+                      })],
+                    });
+                  }
+
+                  return new TableRow({
+                    children: [
+                      makeCell(String(sIdx + 1), { width: { size: 6, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
+                      contentCell,
+                      makeCell("", { width: { size: 14, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER }),
+                    ],
+                  });
+                });
 
                 jobChildren.push(
                   new Table({
@@ -1585,12 +1621,12 @@ async function startServer() {
               new Table({
                 width: { size: 100, type: WidthType.PERCENTAGE },
                 borders: {
-                  top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-                  bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-                  left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-                  right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-                  insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-                  insideVertical: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+                  top: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+                  bottom: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+                  left: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+                  right: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+                  insideHorizontal: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
+                  insideVertical: { style: BorderStyle.NIL, size: 0, color: "FFFFFF" },
                 },
                 rows: [
                   // Header row

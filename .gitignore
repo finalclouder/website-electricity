@@ -9,3 +9,54 @@ coverage/
 ngrok-bin/
 ngrok.zip
 *.pdf
+
+# Database SQLite
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# File nén build
+*.tar.gz
+
+# Script deploy nội bộ
+deploy*.py
+deploy*.sh
+fix_admin_page*.py
+fix_admin_page*.js
+get_env.py
+patch.py
+patch.js
+patch_admin.js
+run_deploy*.sh
+test_*.py
+test.js
+test.cjs
+upload_sftp.py
+use_scp.bat
+use_ssh.py
+
+# File backup tạm
+server_*.ts
+server_*.tsx
+
+# Artifact test
+test-results/
+playwright-report/
+
+# Media local
+uploads/
+
+# File rác
+nul
+tmp-*.png
+*.docx
+
+# Tài liệu nội bộ
+HUONG_DAN_BAN_GIAO_MA_NGUON.md
+MAU_PHAN_HOI_DOI_TAC.md
+PATCTC_COMPARE_REPORT.md
+QUY_TRINH_BAN_GIAO.md
+
+# Subproject cũ
+patctc-generator/

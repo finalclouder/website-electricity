@@ -109,7 +109,7 @@ function replaceLeadingDzSource(currentDzNguon: string, prevDz: string, nextDz: 
 function syncSafetyMeasureMc(text: string, prevMc: string, nextMc: string): string {
   const trimmed = text.trim();
   if (!trimmed) {
-    return buildDefaultSafetyMeasure(nextMc);
+    return text;
   }
   if (!prevMc || prevMc === nextMc) {
     return text;
@@ -231,7 +231,7 @@ function derivePatctcData(
       mc: syncedMeasureMc,
       safetyMeasure: mcContextChanged
         ? syncSafetyMeasureMc(existingMeasure?.safetyMeasure || '', previousMeasureMc, syncedMeasureMc)
-        : (existingMeasure?.safetyMeasure?.trim() ? existingMeasure.safetyMeasure : buildDefaultSafetyMeasure(syncedMeasureMc)),
+        : (existingMeasure != null ? (existingMeasure.safetyMeasure ?? '') : buildDefaultSafetyMeasure(syncedMeasureMc)),
       extraMeasures: [...(existingMeasure?.extraMeasures || [])]
     };
   });
