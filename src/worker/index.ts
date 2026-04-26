@@ -2,6 +2,7 @@ import type { Env } from './types';
 import { json } from './http';
 import { handleAuth } from './routes/auth';
 import { handleDocuments } from './routes/documents';
+import { handleExport } from './routes/export';
 import { handleLanding } from './routes/landing';
 import { handlePosts } from './routes/posts';
 import { handleSocial } from './routes/social';
@@ -36,6 +37,11 @@ export default {
     if (url.pathname.startsWith('/api/documents')) {
       try { return await handleDocuments(request, env, url.pathname, url); }
       catch (error: any) { console.error('Worker documents error:', error?.message || error); return json({ error: 'L?i server backend' }, 500); }
+    }
+
+    if (url.pathname.startsWith('/api/export')) {
+      try { return await handleExport(request, env, url.pathname); }
+      catch (error: any) { console.error('Worker export error:', error?.message || error); return json({ error: 'L?i server backend' }, 500); }
     }
 
     if (url.pathname.startsWith('/api/social')) {
