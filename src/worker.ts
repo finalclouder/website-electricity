@@ -21,6 +21,29 @@ type UserRow = {
   created_at: string;
 };
 
+type PostRow = {
+  id: string;
+  author_id: string;
+  content: string;
+  images?: unknown;
+  attachment_name?: string;
+  category?: string;
+  shares?: number;
+  created_at: string;
+};
+
+type DocumentRow = {
+  id: string;
+  title: string;
+  description?: string;
+  author_id: string;
+  data_snapshot: string;
+  status: 'draft' | 'completed' | 'approved';
+  tags?: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
 type JwtPayload = {
   userId: string;
   email: string;
@@ -30,6 +53,8 @@ type JwtPayload = {
 
 const USER_SELECT = 'id, name, email, avatar, bio, role, status, created_at';
 const USER_SELECT_WITH_PASSWORD = 'id, name, email, password, avatar, bio, role, status, created_at';
+const POST_SELECT = 'id, author_id, content, images, attachment_name, category, shares, created_at';
+const DOCUMENT_SELECT = 'id, title, description, author_id, data_snapshot, status, tags, created_at, updated_at';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -50,6 +75,121 @@ const normalizeUser = (user: UserRow) => ({
   status: user.status,
   createdAt: user.created_at,
 });
+
+const toArray = (value: unknown): any[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+async function fetchUsersMap(supabase: SupabaseClient, userIds: string[]) {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (ids.length === 0) return new Map<string, UserRow>();
+
+  const { data, error } = await supabase
+    .from('users')
+    .select(USER_SELECT)
+    .in('id', ids);
+  if (error) throw error;
+
+  return new Map((data || []).map((user: any) => [user.id, user as UserRow]));
+}
+
+async function formatPosts(supabase: SupabaseClient, posts: PostRow[]) {
+  if (posts.length === 0) return [];
+
+  const postIds = posts.map((post) => post.id);
+  const authors = await fetchUsersMap(supabase, posts.map((post) => post.author_id));
+
+  const [{ data: likes }, { data: shares }, { data: comments }] = await Promise.all([
+    supabase.from('likes').select('user_id, target_id').eq('target_type', 'post').in('target_id', postIds),
+    supabase.from('shares').select('user_id, post_id').in('post_id', postIds),
+    supabase.from('comments').select('id, post_id, author_id, content, parent_id, edited_at, created_at').in('post_id', postIds).order('created_at', { ascending: true }),
+  ]);
+
+  const commentAuthors = await fetchUsersMap(supabase, (comments || []).map((comment: any) => comment.author_id));
+  const likesByPost = new Map<string, string[]>();
+  for (const like of likes || []) {
+    const list = likesByPost.get((like as any).target_id) || [];
+    list.push((like as any).user_id);
+    likesByPost.set((like as any).target_id, list);
+  }
+
+  const sharesByPost = new Map<string, string[]>();
+  for (const share of shares || []) {
+    const list = sharesByPost.get((share as any).post_id) || [];
+    list.push((share as any).user_id);
+    sharesByPost.set((share as any).post_id, list);
+  }
+
+  const commentsByPost = new Map<string, any[]>();
+  for (const comment of comments || []) {
+    const row: any = comment;
+    const author = commentAuthors.get(row.author_id);
+    const formatted = {
+      id: row.id,
+      postId: row.post_id,
+      authorId: row.author_id,
+      authorName: author?.name || '',
+      authorAvatar: author?.avatar || '',
+      content: row.content,
+      parentId: row.parent_id || undefined,
+      editedAt: row.edited_at || undefined,
+      createdAt: row.created_at,
+      likes: [],
+      replies: [],
+    };
+    const list = commentsByPost.get(row.post_id) || [];
+    list.push(formatted);
+    commentsByPost.set(row.post_id, list);
+  }
+
+  return posts.map((post) => {
+    const author = authors.get(post.author_id);
+    return {
+      id: post.id,
+      authorId: post.author_id,
+      authorName: author?.name || '',
+      authorAvatar: author?.avatar || '',
+      authorRole: author?.role || 'user',
+      content: post.content,
+      images: toArray(post.images),
+      attachmentName: post.attachment_name || '',
+      category: post.category || 'general',
+      shares: post.shares || 0,
+      createdAt: post.created_at,
+      likes: likesByPost.get(post.id) || [],
+      sharedBy: sharesByPost.get(post.id) || [],
+      comments: commentsByPost.get(post.id) || [],
+    };
+  });
+}
+
+async function formatDocuments(supabase: SupabaseClient, docs: DocumentRow[]) {
+  if (docs.length === 0) return [];
+  const authors = await fetchUsersMap(supabase, docs.map((doc) => doc.author_id));
+
+  return docs.map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    description: doc.description || '',
+    authorId: doc.author_id,
+    authorName: authors.get(doc.author_id)?.name || '',
+    dataSnapshot: doc.data_snapshot,
+    status: doc.status,
+    tags: toArray(doc.tags),
+    createdAt: doc.created_at,
+    updatedAt: doc.updated_at,
+    downloadCount: 0,
+  }));
+}
 
 const readJson = async <T>(request: Request): Promise<T> => {
   try {
@@ -435,6 +575,295 @@ async function handleLanding(request: Request, env: Env, pathname: string): Prom
   return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
 }
 
+async function handlePosts(request: Request, env: Env, pathname: string, url: URL): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if ('response' in auth) return auth.response;
+  const { supabase, user } = auth;
+
+  if (request.method === 'POST' && pathname === '/api/posts/presign') {
+    return json({ error: 'Upload media chưa được migrate sang R2 presign trên Worker. Hãy đăng bài text trước.' }, 501);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/posts') {
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 20));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    const { data, error, count } = await supabase
+      .from('posts')
+      .select(POST_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    const posts = await formatPosts(supabase, (data || []) as PostRow[]);
+    const total = count ?? 0;
+    return json({ data: posts, total, hasNextPage: from + posts.length < total });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/posts') {
+    const { content, attachmentName, category, mediaUrls } = await readJson<{
+      content?: string;
+      attachmentName?: string;
+      category?: string;
+      mediaUrls?: string[];
+    }>(request);
+    const normalizedContent = content?.trim() || '';
+    const images = Array.isArray(mediaUrls) ? mediaUrls.filter((item) => typeof item === 'string').slice(0, 10) : [];
+    const validCategories = ['general', 'technical', 'safety', 'announcement'];
+
+    if (!normalizedContent && images.length === 0) return json({ error: 'Nội dung hoặc media không được để trống' }, 400);
+    if (normalizedContent.length > 10000) return json({ error: 'Nội dung quá dài (tối đa 10000 ký tự)' }, 400);
+    if (category && !validCategories.includes(category)) return json({ error: 'Danh mục không hợp lệ' }, 400);
+
+    const { error } = await supabase.from('posts').insert({
+      id: crypto.randomUUID(),
+      author_id: user.id,
+      content: normalizedContent,
+      images,
+      attachment_name: attachmentName || '',
+      category: category || 'general',
+    });
+    if (error) throw error;
+
+    const { data, error: fetchError, count } = await supabase
+      .from('posts')
+      .select(POST_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(0, 19);
+    if (fetchError) throw fetchError;
+    return json({ data: await formatPosts(supabase, (data || []) as PostRow[]), total: count ?? 0, hasNextPage: (count ?? 0) > 20 });
+  }
+
+  const postMatch = pathname.match(/^\/api\/posts\/([^/]+)(?:\/(like|share|comments))?(?:\/([^/]+))?(?:\/(like))?$/);
+  if (!postMatch) return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
+  const [, postId, action, commentId, commentLike] = postMatch;
+
+  const { data: post, error: postError } = await supabase.from('posts').select(POST_SELECT).eq('id', postId).maybeSingle<PostRow>();
+  if (postError) throw postError;
+  if (!post) return json({ error: 'Bài viết không tồn tại' }, 404);
+
+  if (request.method === 'DELETE' && !action) {
+    if (post.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền xóa bài viết này' }, 403);
+    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    if (error) throw error;
+    return json({ message: 'Đã xóa bài viết' });
+  }
+
+  if (request.method === 'POST' && action === 'like') {
+    const { data: existing, error } = await supabase
+      .from('likes')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .eq('target_type', 'post')
+      .eq('target_id', postId)
+      .maybeSingle();
+    if (error) throw error;
+    if (existing) {
+      const { error: deleteError } = await supabase.from('likes').delete().eq('user_id', user.id).eq('target_type', 'post').eq('target_id', postId);
+      if (deleteError) throw deleteError;
+    } else {
+      const { error: insertError } = await supabase.from('likes').insert({ user_id: user.id, target_type: 'post', target_id: postId });
+      if (insertError) throw insertError;
+    }
+    return json({ message: 'OK' });
+  }
+
+  if (request.method === 'POST' && action === 'share') {
+    await supabase.from('shares').upsert({ user_id: user.id, post_id: postId });
+    await supabase.from('posts').update({ shares: (post.shares || 0) + 1 }).eq('id', postId);
+    return json({ message: 'OK' });
+  }
+
+  if (request.method === 'POST' && action === 'comments' && !commentId) {
+    const { content, parentId } = await readJson<{ content?: string; parentId?: string }>(request);
+    const normalizedContent = content?.trim() || '';
+    if (!normalizedContent) return json({ error: 'Nội dung bình luận không được trống' }, 400);
+    if (normalizedContent.length > 2000) return json({ error: 'Bình luận quá dài (tối đa 2000 ký tự)' }, 400);
+    const { error } = await supabase.from('comments').insert({
+      id: crypto.randomUUID(),
+      post_id: postId,
+      author_id: user.id,
+      content: normalizedContent,
+      parent_id: parentId || null,
+    });
+    if (error) throw error;
+    return json({ message: 'OK' });
+  }
+
+  if (commentId && action === 'comments') {
+    const { data: comment, error } = await supabase.from('comments').select('*').eq('id', commentId).maybeSingle<any>();
+    if (error) throw error;
+    if (!comment) return json({ error: 'Bình luận không tồn tại' }, 404);
+
+    if (request.method === 'PUT' && !commentLike) {
+      if (comment.author_id !== user.id) return json({ error: 'Bạn không có quyền sửa bình luận này' }, 403);
+      const { content } = await readJson<{ content?: string }>(request);
+      const normalizedContent = content?.trim() || '';
+      if (!normalizedContent) return json({ error: 'Nội dung không được trống' }, 400);
+      const { error: updateError } = await supabase.from('comments').update({ content: normalizedContent, edited_at: new Date().toISOString() }).eq('id', commentId);
+      if (updateError) throw updateError;
+      return json({ message: 'OK' });
+    }
+
+    if (request.method === 'DELETE' && !commentLike) {
+      if (comment.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền xóa bình luận này' }, 403);
+      const { error: deleteError } = await supabase.from('comments').delete().eq('id', commentId);
+      if (deleteError) throw deleteError;
+      return json({ message: 'OK' });
+    }
+
+    if (request.method === 'POST' && commentLike === 'like') {
+      const { error: insertError } = await supabase.from('likes').upsert({ user_id: user.id, target_type: 'comment', target_id: commentId });
+      if (insertError) throw insertError;
+      return json({ message: 'OK' });
+    }
+  }
+
+  return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
+}
+
+async function handleDocuments(request: Request, env: Env, pathname: string, url: URL): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if ('response' in auth) return auth.response;
+  const { supabase, user } = auth;
+
+  const formatResult = async (query: any) => {
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return { data: await formatDocuments(supabase, (data || []) as DocumentRow[]), count: count ?? (data || []).length };
+  };
+
+  if (request.method === 'GET' && pathname === '/api/documents') {
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 20));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    const result = await formatResult(
+      supabase.from('documents').select(DOCUMENT_SELECT, { count: 'exact' }).in('status', ['completed', 'approved']).order('updated_at', { ascending: false }).range(from, to),
+    );
+    return json({ data: result.data, total: result.count, hasNextPage: from + result.data.length < result.count });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/documents/my') {
+    const result = await formatResult(supabase.from('documents').select(DOCUMENT_SELECT).eq('author_id', user.id).order('updated_at', { ascending: false }));
+    return json(result.data);
+  }
+
+  const userDocsMatch = pathname.match(/^\/api\/documents\/user\/([^/]+)$/);
+  if (request.method === 'GET' && userDocsMatch) {
+    const targetUserId = userDocsMatch[1];
+    let query = supabase.from('documents').select(DOCUMENT_SELECT).eq('author_id', targetUserId).order('updated_at', { ascending: false });
+    if (targetUserId !== user.id) query = query.eq('status', 'approved');
+    const result = await formatResult(query);
+    return json(result.data);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/documents') {
+    const { title, description, dataSnapshot, status, tags } = await readJson<any>(request);
+    if (!title?.trim() || !dataSnapshot) return json({ error: 'Thiếu tiêu đề hoặc dữ liệu' }, 400);
+    if (title.length > 200) return json({ error: 'Tiêu đề quá dài (tối đa 200 ký tự)' }, 400);
+    if (status && !['draft', 'completed', 'approved'].includes(status)) return json({ error: 'Trạng thái không hợp lệ' }, 400);
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('documents').insert({
+      id,
+      title: title.trim(),
+      description: description || '',
+      author_id: user.id,
+      data_snapshot: dataSnapshot,
+      status: status || 'draft',
+      tags: Array.isArray(tags) ? tags : [],
+      updated_at: now,
+    });
+    if (error) throw error;
+    return json({ id, message: 'Đã lưu tài liệu' });
+  }
+
+  const docMatch = pathname.match(/^\/api\/documents\/([^/]+)(?:\/(download|downloads))?$/);
+  if (!docMatch) return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
+  const [, id, action] = docMatch;
+  const { data: doc, error: docError } = await supabase.from('documents').select(DOCUMENT_SELECT).eq('id', id).maybeSingle<DocumentRow>();
+  if (docError) throw docError;
+  if (!doc) return json({ error: 'Tài liệu không tồn tại' }, 404);
+
+  if (request.method === 'POST' && action === 'download') {
+    return json({ message: 'Đã ghi nhận lượt tải tài liệu' });
+  }
+  if (request.method === 'GET' && action === 'downloads') {
+    return json([]);
+  }
+  if (action) return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
+
+  if (request.method === 'PUT') {
+    if (doc.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền chỉnh sửa tài liệu này' }, 403);
+    const { title, description, dataSnapshot, status, tags } = await readJson<any>(request);
+    if (title && title.length > 200) return json({ error: 'Tiêu đề quá dài (tối đa 200 ký tự)' }, 400);
+    if (status !== undefined && !['draft', 'completed', 'approved'].includes(status)) return json({ error: 'Trạng thái không hợp lệ' }, 400);
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (title !== undefined) payload.title = title;
+    if (description !== undefined) payload.description = description;
+    if (dataSnapshot !== undefined) payload.data_snapshot = dataSnapshot;
+    if (status !== undefined) payload.status = status;
+    if (tags !== undefined) payload.tags = Array.isArray(tags) ? tags : [];
+    const { error } = await supabase.from('documents').update(payload).eq('id', id);
+    if (error) throw error;
+    return json({ message: 'Đã cập nhật tài liệu' });
+  }
+
+  if (request.method === 'DELETE') {
+    if (doc.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền xóa tài liệu này' }, 403);
+    const { error } = await supabase.from('documents').delete().eq('id', id);
+    if (error) throw error;
+    return json({ message: 'Đã xóa tài liệu' });
+  }
+
+  return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
+}
+
+async function handleSocial(request: Request, env: Env, pathname: string): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if ('response' in auth) return auth.response;
+  const { supabase, user } = auth;
+
+  if (request.method === 'GET' && pathname === '/api/social/notifications/unread-count') {
+    const { count, error } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false);
+    if (error) return json({ count: 0 });
+    return json({ count: count ?? 0 });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/social/notifications') {
+    const { data, error } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
+    if (error) return json([]);
+    return json(data || []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/social/notifications/read-all') {
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id);
+    return json({ message: 'Đã đánh dấu tất cả thông báo là đã đọc', count: 0 });
+  }
+
+  const readMatch = pathname.match(/^\/api\/social\/notifications\/([^/]+)\/read$/);
+  if (request.method === 'POST' && readMatch) {
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('id', readMatch[1]);
+    return json({ message: 'Đã đánh dấu đã đọc', count: 0 });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/social/friend-requests') {
+    return json({ incoming: [], outgoing: [] });
+  }
+  if (request.method === 'GET' && pathname === '/api/social/friends') {
+    return json([]);
+  }
+  if (pathname.includes('/followers') || pathname.includes('/following')) {
+    return json([]);
+  }
+  if (pathname.includes('/relationships/')) {
+    return json({ isFollowing: false, isFollowedBy: false, friendStatus: 'none', incomingRequest: null, outgoingRequest: null, friends: [] });
+  }
+
+  return json({ error: 'API endpoint chưa được migrate sang Cloudflare Worker' }, 501);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -461,6 +890,33 @@ export default {
         return await handleLanding(request, env, url.pathname);
       } catch (error: any) {
         console.error('Worker landing error:', error?.message || error);
+        return json({ error: 'Lỗi server backend' }, 500);
+      }
+    }
+
+    if (url.pathname.startsWith('/api/posts')) {
+      try {
+        return await handlePosts(request, env, url.pathname, url);
+      } catch (error: any) {
+        console.error('Worker posts error:', error?.message || error);
+        return json({ error: 'Lỗi server backend' }, 500);
+      }
+    }
+
+    if (url.pathname.startsWith('/api/documents')) {
+      try {
+        return await handleDocuments(request, env, url.pathname, url);
+      } catch (error: any) {
+        console.error('Worker documents error:', error?.message || error);
+        return json({ error: 'Lỗi server backend' }, 500);
+      }
+    }
+
+    if (url.pathname.startsWith('/api/social')) {
+      try {
+        return await handleSocial(request, env, url.pathname);
+      } catch (error: any) {
+        console.error('Worker social error:', error?.message || error);
         return json({ error: 'Lỗi server backend' }, 500);
       }
     }
