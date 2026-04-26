@@ -3,6 +3,7 @@ import { POST_SELECT } from '../types';
 import { requireAuth } from '../auth';
 import { formatPosts } from '../formatters';
 import { json, readJson } from '../http';
+import { deleteR2MediaUrls, generatePresignedUpload } from '../r2';
 
 export async function handlePosts(request: Request, env: Env, pathname: string, url: URL): Promise<Response> {
   const auth = await requireAuth(request, env);
@@ -10,7 +11,22 @@ export async function handlePosts(request: Request, env: Env, pathname: string, 
   const { supabase, user } = auth;
 
   if (request.method === 'POST' && pathname === '/api/posts/presign') {
-    return json({ error: 'Upload media chưa được migrate sang R2 presign trên Worker. Hãy đăng bài text trước.' }, 501);
+    try {
+      const { files } = await readJson<{ files?: { contentType?: string; fileSize?: number; fileName?: string }[] }>(request);
+      if (!Array.isArray(files) || files.length === 0) return json({ error: 'Danh sach files khong hop le' }, 400);
+      if (files.length > 10) return json({ error: 'Toi da 10 files moi bai dang' }, 400);
+
+      const uploads = await Promise.all(files.map((file) => generatePresignedUpload(
+        env,
+        file.contentType || '',
+        Number(file.fileSize),
+        'posts',
+      )));
+      return json({ uploads });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Loi tao presigned URL';
+      return json({ error: message }, 400);
+    }
   }
 
   if (request.method === 'GET' && pathname === '/api/posts') {
@@ -73,8 +89,10 @@ export async function handlePosts(request: Request, env: Env, pathname: string, 
 
   if (request.method === 'DELETE' && !action) {
     if (post.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền xóa bài viết này' }, 403);
+    const mediaUrls = Array.isArray(post.images) ? post.images.filter((item): item is string => typeof item === 'string') : [];
     const { error } = await supabase.from('posts').delete().eq('id', postId);
     if (error) throw error;
+    if (mediaUrls.length > 0) await deleteR2MediaUrls(env, mediaUrls);
     return json({ message: 'Đã xóa bài viết' });
   }
 
