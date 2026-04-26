@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "website-electricity",
-  "main": "src/worker.ts",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2026-04-26",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
