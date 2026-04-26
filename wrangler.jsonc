@@ -4,6 +4,11 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-04-26",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "R2_ACCOUNT_ID": "5c55920a114c8233b10a248f3e2bdb98",
+    "R2_BUCKET_NAME": "patctc-media",
+    "R2_PUBLIC_URL": "https://pub-878349e894eb43d09407b283f09e1377.r2.dev"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
