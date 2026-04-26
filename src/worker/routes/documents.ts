@@ -1,7 +1,7 @@
 import type { Env, DocumentRow } from '../types';
 import { DOCUMENT_SELECT } from '../types';
 import { requireAuth } from '../auth';
-import { formatDocuments } from '../formatters';
+import { fetchUsersMap, formatDocuments, isMissingTableError, toUserSummary } from '../formatters';
 import { json, readJson } from '../http';
 
 export async function handleDocuments(request: Request, env: Env, pathname: string, url: URL): Promise<Response> {
@@ -69,10 +69,55 @@ export async function handleDocuments(request: Request, env: Env, pathname: stri
   if (!doc) return json({ error: 'Tài liệu không tồn tại' }, 404);
 
   if (request.method === 'POST' && action === 'download') {
+    if (doc.author_id !== user.id) {
+      const downloadId = crypto.randomUUID();
+      const { error: downloadError } = await supabase.from('document_downloads').insert({
+        id: downloadId,
+        document_id: doc.id,
+        downloader_id: user.id,
+        owner_id: doc.author_id,
+        created_at: new Date().toISOString(),
+      });
+      if (downloadError && !isMissingTableError(downloadError, 'document_downloads')) throw downloadError;
+
+      const { error: notificationError } = await supabase.from('notifications').insert({
+        id: crypto.randomUUID(),
+        user_id: doc.author_id,
+        actor_id: user.id,
+        type: 'document_download',
+        entity_type: 'document',
+        entity_id: doc.id,
+        data_json: { documentId: doc.id, downloaderId: user.id, ownerId: doc.author_id },
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
+      if (notificationError && !isMissingTableError(notificationError, 'notifications')) throw notificationError;
+    }
     return json({ message: 'Đã ghi nhận lượt tải tài liệu' });
   }
   if (request.method === 'GET' && action === 'downloads') {
-    return json([]);
+    if (doc.author_id !== user.id && user.role !== 'admin') return json({ error: 'Bạn không có quyền xem lượt tải tài liệu này' }, 403);
+    const { data, error } = await supabase
+      .from('document_downloads')
+      .select('id, document_id, downloader_id, owner_id, created_at')
+      .eq('document_id', id)
+      .order('created_at', { ascending: false });
+    if (error) {
+      if (isMissingTableError(error, 'document_downloads')) return json([]);
+      throw error;
+    }
+
+    const userIds = (data || []).flatMap((row: any) => [row.downloader_id, row.owner_id]);
+    const users = await fetchUsersMap(supabase, userIds);
+    return json((data || []).map((row: any) => ({
+      id: row.id,
+      documentId: row.document_id,
+      downloaderId: row.downloader_id,
+      ownerId: row.owner_id,
+      downloader: toUserSummary(users.get(row.downloader_id) || { id: row.downloader_id }),
+      owner: toUserSummary(users.get(row.owner_id) || { id: row.owner_id }),
+      createdAt: row.created_at,
+    })));
   }
   if (action) return json({ error: 'API endpoint chưa được hỗ trợ trên Cloudflare Worker' }, 404);
 
