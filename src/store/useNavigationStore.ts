@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export const APP_TABS = ['patctc', 'social', 'documents', 'profile', 'user-profile', 'admin'] as const;
+export const APP_TABS = ['patctc', 'social', 'documents', 'review-documents', 'approved-documents', 'profile', 'user-profile', 'admin'] as const;
 export type AppTab = (typeof APP_TABS)[number];
 
 const DEFAULT_ACTIVE_TAB: AppTab = 'patctc';

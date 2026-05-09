@@ -591,6 +591,13 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
 
           const seqData = data.sequences?.[jobIdx + 1]
             || { eyeCheckText: data.eyeCheckText, guongKiemTra: data.guongKiemTra, bocCachDienBlocks: data.bocCachDienBlocks, dieuKhienGauBlocks: data.dieuKhienGauBlocks, thaoBocCachDienBlocks: data.thaoBocCachDienBlocks };
+          const actionBlocks = Array.isArray(seqData.actionBlocks)
+            ? seqData.actionBlocks
+            : [
+                ...(seqData.bocCachDienBlocks || []).map(block => ({ ...block, type: 'bocCachDien' as const })),
+                ...(seqData.dieuKhienGauBlocks || []).map(block => ({ ...block, type: 'dieuKhienGau' as const })),
+                ...(seqData.thaoBocCachDienBlocks || []).map(block => ({ ...block, type: 'thaoBocCachDien' as const }))
+              ];
 
           const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
           const allSteps: string[] = [];
@@ -612,26 +619,26 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
             allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
           }
           
-          seqData.bocCachDienBlocks.forEach(block => {
-            const viTri = block.viTri.trim().replace(/\.+$/, "");
-            const trinhTu = block.trinhTu.trim().replace(/\.+$/, "");
-            allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
-            allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
-          });
-          if (seqData.bocCachDienBlocks.length > 0) {
-            allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
-          }
-          
-          seqData.dieuKhienGauBlocks.forEach(block => {
-            const deLamGi = block.deLamGi.trim().replace(/\.+$/, "");
-            const thucHien = block.thucHien.trim().replace(/\.+$/, "");
-            allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
-            allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
-          });
-          
-          seqData.thaoBocCachDienBlocks.forEach(block => {
-            const viTri = block.viTri.trim().replace(/\.+$/, "");
-            const trinhTu = block.trinhTu.trim().replace(/\.+$/, "");
+          actionBlocks.forEach(block => {
+            if (block.type === 'bocCachDien') {
+              const viTri = (block.viTri || '').trim().replace(/\.+$/, "");
+              const trinhTu = (block.trinhTu || '').trim().replace(/\.+$/, "");
+              allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
+              allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
+              allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
+              return;
+            }
+
+            if (block.type === 'dieuKhienGau') {
+              const deLamGi = (block.deLamGi || '').trim().replace(/\.+$/, "");
+              const thucHien = (block.thucHien || '').trim().replace(/\.+$/, "");
+              allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
+              allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
+              return;
+            }
+
+            const viTri = (block.viTri || '').trim().replace(/\.+$/, "");
+            const trinhTu = (block.trinhTu || '').trim().replace(/\.+$/, "");
             allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để tháo bọc cách điện.`);
             allSteps.push(`Tháo bọc theo trình tự: ${trinhTu || "..."}.`);
           });
@@ -846,7 +853,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
               type: 'content',
               lineCount: 1,
               isHeading: true,
-              render: () => <div className="font-bold text-left">I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/13 người</div>
+              render: () => <div className="font-bold text-left">I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/{totalPersonnel} người</div>
             });
           } else {
             items.push({
@@ -867,7 +874,7 @@ export const Preview: React.FC<PreviewProps> = ({ data, activeSection, zoom, set
                   <td className="border border-black p-1 text-center align-middle col-tt">{globalIdx + 1}</td>
                   <td className="border border-black p-1 text-left align-middle pl-2">{formatName(p.name)}</td>
                   <td className="border border-black p-1 text-center align-middle col-gender">{p.gender}</td>
-                  <td className="border border-black p-1 text-center align-middle">{p.birthYear}</td>
+                  <td className="border border-black p-1 text-center align-middle">{p.birthYear ? String(p.birthYear) : ''}</td>
                   <td className="border border-black p-1 text-center align-middle">{p.role}</td>
                   <td className="border border-black p-1 text-center align-middle">{p.job}</td>
                   <td className="border border-black p-1 text-center align-middle">{p.grade}</td>

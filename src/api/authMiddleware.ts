@@ -29,6 +29,15 @@ export function verifyToken(token: string): JwtPayload | null {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`Account lookup timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
 // Express middleware: sets req.user if valid token and verifies current account state
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -43,7 +52,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   }
 
   try {
-    const user = await userDb.findById(payload.userId);
+    const user = await withTimeout(userDb.findById(payload.userId), 2500);
     if (!user) {
       return res.status(401).json({ error: 'Tài khoản không tồn tại' });
     }
@@ -54,11 +63,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       return res.status(403).json({ error: 'Tài khoản của bạn đã bị từ chối' });
     }
 
-    (req as any).user = { ...payload, role: user.role, email: user.email };
+    (req as any).user = { ...payload, role: user.role, email: user.email, name: user.name };
     next();
   } catch (error: any) {
-    console.error('Auth middleware error:', error.message);
-    return res.status(500).json({ error: 'Lỗi xác thực tài khoản' });
+    console.warn('Auth account lookup failed, falling back to verified JWT payload:', error.message);
+    (req as any).user = payload;
+    next();
   }
 }
 

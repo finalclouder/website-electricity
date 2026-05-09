@@ -1,26 +1,34 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import { useAuthStore } from './store/useAuthStore';
 import { useSocialStore } from './store/useSocialStore';
 import { useLandingStore } from './store/useLandingStore';
 import { useNavigationStore, readTabFromUrl } from './store/useNavigationStore';
 import { api } from './utils/api';
-import { LandingPage } from './pages/LandingPage';
-import { LoginPage } from './pages/LoginPage';
 import { MainLayout } from './components/layout/MainLayout';
-import { PATCTCEditorPage } from './pages/PATCTCEditorPage';
-import { SocialPage } from './pages/SocialPage';
-import { DocumentsPage } from './pages/DocumentsPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { AdminPage } from './pages/AdminPage';
+
+const LandingPage = React.lazy(() => import('./pages/LandingPage').then(module => ({ default: module.LandingPage })));
+const LoginPage = React.lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })));
+const PATCTCEditorPage = React.lazy(() => import('./pages/PATCTCEditorPage').then(module => ({ default: module.PATCTCEditorPage })));
+const SocialPage = React.lazy(() => import('./pages/SocialPage').then(module => ({ default: module.SocialPage })));
+const DocumentsPage = React.lazy(() => import('./pages/DocumentsPage').then(module => ({ default: module.DocumentsPage })));
+const ReviewDocumentsPage = React.lazy(() => import('./pages/ReviewDocumentsPage').then(module => ({ default: module.ReviewDocumentsPage })));
+const ProfilePage = React.lazy(() => import('./pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const AdminPage = React.lazy(() => import('./pages/AdminPage').then(module => ({ default: module.AdminPage })));
+
+function PageFallback() {
+  return (
+    <div className="h-full flex items-center justify-center text-sm text-zinc-400">
+      Đang tải...
+    </div>
+  );
+}
 
 export default function App() {
   const { isAuthenticated, logout, user } = useAuthStore();
   const {
-    fetchPosts,
     fetchDocuments,
-    fetchFriendRequests,
-    fetchNotifications,
+    fetchApprovedDocuments,
     fetchUnreadNotificationCount,
     subscribeToNotifications,
     unsubscribeFromNotifications,
@@ -83,26 +91,32 @@ export default function App() {
       api.get('/auth/me')
         .then((user: any) => {
            useAuthStore.setState({ user });
-           useAuthStore.getState().fetchUsers();
+           if (user.role === 'admin') {
+             useAuthStore.getState().fetchUsers();
+           }
         })
         .catch(() => {
            logout();
         });
-      fetchPosts();
-      fetchDocuments();
-      fetchFriendRequests();
-      fetchNotifications();
       fetchUnreadNotificationCount();
     }
   }, [
     isAuthenticated,
     logout,
-    fetchPosts,
-    fetchDocuments,
-    fetchFriendRequests,
-    fetchNotifications,
     fetchUnreadNotificationCount,
   ]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    if (activeTab === 'documents') {
+      fetchDocuments();
+    }
+
+    if (activeTab === 'approved-documents') {
+      fetchApprovedDocuments();
+    }
+  }, [isAuthenticated, activeTab, fetchDocuments, fetchApprovedDocuments]);
 
   // Realtime notification subscription — subscribe on login, unsubscribe on logout.
   useEffect(() => {
@@ -123,7 +137,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    if (activeTab === 'admin' && user?.role !== 'admin') {
+    if ((activeTab === 'admin' || activeTab === 'review-documents') && user?.role !== 'admin') {
       navigateToTab('patctc');
       return;
     }
@@ -173,7 +187,9 @@ export default function App() {
     return (
       <>
         <Toaster position="top-right" richColors />
-        <LandingPage onEnter={enterFromLanding} />
+        <Suspense fallback={<PageFallback />}>
+          <LandingPage onEnter={enterFromLanding} />
+        </Suspense>
       </>
     );
   }
@@ -183,10 +199,12 @@ export default function App() {
     return (
       <>
         <Toaster position="top-right" richColors />
-        <LoginPage
-          onBackToLanding={returnToLanding}
-          initialRegister={initialRegister}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <LoginPage
+            onBackToLanding={returnToLanding}
+            initialRegister={initialRegister}
+          />
+        </Suspense>
       </>
     );
   }
@@ -208,12 +226,16 @@ export default function App() {
     <>
       <Toaster position="top-right" richColors />
       <MainLayout activeTab={activeTab} onTabChange={handleTabChange}>
-        {activeTab === 'patctc' && <PATCTCEditorPage />}
-        {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
-        {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
-        {activeTab === 'profile' && <ProfilePage onTabChange={handleTabChange} />}
-        {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} onTabChange={handleTabChange} />}
-        {activeTab === 'admin' && <AdminPage />}
+        <Suspense fallback={<PageFallback />}>
+          {activeTab === 'patctc' && <PATCTCEditorPage />}
+          {activeTab === 'social' && <SocialPage onViewProfile={handleViewUserProfile} />}
+          {activeTab === 'documents' && <DocumentsPage onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
+          {activeTab === 'review-documents' && <ReviewDocumentsPage />}
+          {activeTab === 'approved-documents' && <DocumentsPage mode="approved" onViewProfile={handleViewUserProfile} onTabChange={handleTabChange} />}
+          {activeTab === 'profile' && <ProfilePage onTabChange={handleTabChange} />}
+          {activeTab === 'user-profile' && viewingUserId && <ProfilePage viewingUserId={viewingUserId} onBack={handleBackFromProfile} onTabChange={handleTabChange} />}
+          {activeTab === 'admin' && <AdminPage />}
+        </Suspense>
       </MainLayout>
     </>
   );

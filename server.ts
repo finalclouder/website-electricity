@@ -105,8 +105,6 @@ function createInMemoryRateLimiter(windowMs: number, maxRequests: number) {
 }
 
 async function startServer() {
-  await seedDefaultUsersIfNeeded();
-
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const exportRateLimit = createInMemoryRateLimiter(60 * 1000, 8);
@@ -156,7 +154,7 @@ async function startServer() {
         // Allow media from Supabase, R2, and w3schools (placeholder videos)
         "media-src": ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in", "https://*.r2.dev", "https://*.cloudflarestorage.com", "https://www.w3schools.com"],
         // Allow connections to Supabase API, Realtime WS, Gemini, Safe Browsing, R2 upload
-        "connect-src": ["'self'", "https://*.supabase.co", "https://*.supabase.in", "wss://*.supabase.co", "wss://*.supabase.in", "https://generativelanguage.googleapis.com", "https://safebrowsing.googleapis.com", "https://*.r2.cloudflarestorage.com", "https://*.r2.dev"],
+        "connect-src": ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "wss://localhost:*", "https://*.supabase.co", "https://*.supabase.in", "wss://*.supabase.co", "wss://*.supabase.in", "https://generativelanguage.googleapis.com", "https://safebrowsing.googleapis.com", "https://*.r2.cloudflarestorage.com", "https://*.r2.dev"],
         // Allow Google Fonts
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com"],
@@ -1011,6 +1009,13 @@ async function startServer() {
                       dieuKhienGauBlocks: data.dieuKhienGauBlocks || [],
                       thaoBocCachDienBlocks: data.thaoBocCachDienBlocks || [],
                     };
+                const actionBlocks = Array.isArray(seqData.actionBlocks)
+                  ? seqData.actionBlocks
+                  : [
+                      ...(seqData.bocCachDienBlocks || []).map((block: any) => ({ ...block, type: 'bocCachDien' })),
+                      ...(seqData.dieuKhienGauBlocks || []).map((block: any) => ({ ...block, type: 'dieuKhienGau' })),
+                      ...(seqData.thaoBocCachDienBlocks || []).map((block: any) => ({ ...block, type: 'thaoBocCachDien' })),
+                    ];
 
                 const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
                 const allSteps: string[] = [];
@@ -1031,24 +1036,24 @@ async function startServer() {
                   allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
                 }
 
-                (seqData.bocCachDienBlocks || []).forEach((block: any) => {
-                  const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
-                  const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
-                  allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
-                  allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
-                });
-                if ((seqData.bocCachDienBlocks || []).length > 0) {
-                  allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
-                }
+                actionBlocks.forEach((block: any) => {
+                  if (block.type === 'bocCachDien') {
+                    const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
+                    const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
+                    allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
+                    allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
+                    allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
+                    return;
+                  }
 
-                (seqData.dieuKhienGauBlocks || []).forEach((block: any) => {
-                  const deLamGi = (block.deLamGi || "").trim().replace(/\.+$/, "");
-                  const thucHien = (block.thucHien || "").trim().replace(/\.+$/, "");
-                  allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
-                  allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
-                });
+                  if (block.type === 'dieuKhienGau') {
+                    const deLamGi = (block.deLamGi || "").trim().replace(/\.+$/, "");
+                    const thucHien = (block.thucHien || "").trim().replace(/\.+$/, "");
+                    allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
+                    allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
+                    return;
+                  }
 
-                (seqData.thaoBocCachDienBlocks || []).forEach((block: any) => {
                   const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
                   const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
                   allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để tháo bọc cách điện.`);
@@ -1188,7 +1193,7 @@ async function startServer() {
                 spacing: { line: 312 },
                 children: [new TextRun({ text: "ĐƠN VỊ CÔNG TÁC CHO CÔNG VIỆC CỤ THỂ", font: "Times New Roman", size: 26, bold: true })],
               }),
-              standardText("I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/13 người", { bold: true }),
+              standardText(`I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/${(data.personnel || []).length} người`, { bold: true }),
 
               // Personnel table
               new Table({
@@ -1211,7 +1216,7 @@ async function startServer() {
                       makeCell(String(pIdx + 1), { width: { size: 6, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(toTitleCase(p.name), { width: { size: 33, type: WidthType.PERCENTAGE } }),
                       makeCell(p.gender || "", { width: { size: 10, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
-                      makeCell(p.birthYear || "", { width: { size: 9, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
+                      makeCell(p.birthYear ? String(p.birthYear) : "", { width: { size: 9, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.role || "", { width: { size: 11, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.job || "", { width: { size: 15, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.grade || "", { width: { size: 8, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
@@ -1779,6 +1784,10 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  seedDefaultUsersIfNeeded().catch((error) => {
+    console.error('Default user seeding failed:', error?.message || error);
   });
 }
 

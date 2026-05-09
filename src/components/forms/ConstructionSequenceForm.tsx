@@ -2,6 +2,7 @@ import React from 'react';
 import { Zap, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { Accordion, Input } from '../UI';
+import type { SequenceActionBlock, SequenceActionType } from '../../types';
 
 export const ConstructionSequenceForm: React.FC = () => {
   const { data, updateData, activeSection, toggleSection, activeJobIdx, setActiveJobIdx, addBocCachDien, addDieuKhienGau, addThaoBocCachDien, scrollPreviewToSection } = useStore();
@@ -48,6 +49,139 @@ export const ConstructionSequenceForm: React.FC = () => {
   const removeThaoBocCachDien = (blockId: string) => {
     updateSequence('thaoBocCachDienBlocks', seq.thaoBocCachDienBlocks.filter(b => b.id !== blockId));
   };
+
+  const getActionBlocks = (): SequenceActionBlock[] => {
+    if (Array.isArray(seq.actionBlocks)) return seq.actionBlocks;
+    return [
+      ...seq.bocCachDienBlocks.map(block => ({ ...block, type: 'bocCachDien' as const })),
+      ...seq.dieuKhienGauBlocks.map(block => ({ ...block, type: 'dieuKhienGau' as const })),
+      ...seq.thaoBocCachDienBlocks.map(block => ({ ...block, type: 'thaoBocCachDien' as const }))
+    ];
+  };
+
+  const syncActionBlocks = (actionBlocks: SequenceActionBlock[]) => {
+    updateSequence('actionBlocks', actionBlocks);
+  };
+
+  const createActionBlock = (type: SequenceActionType): SequenceActionBlock => ({
+    id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    viTri: '',
+    trinhTu: '',
+    deLamGi: '',
+    thucHien: ''
+  });
+
+  const addActionBlock = (type: SequenceActionType, afterId?: string) => {
+    const blocks = getActionBlocks();
+    const newBlock = createActionBlock(type);
+    if (!afterId) {
+      syncActionBlocks([...blocks, newBlock]);
+      return;
+    }
+
+    const index = blocks.findIndex(block => block.id === afterId);
+    if (index < 0) {
+      syncActionBlocks([...blocks, newBlock]);
+      return;
+    }
+
+    syncActionBlocks([
+      ...blocks.slice(0, index + 1),
+      newBlock,
+      ...blocks.slice(index + 1)
+    ]);
+  };
+
+  const updateActionBlock = (id: string, updates: Partial<SequenceActionBlock>) => {
+    syncActionBlocks(getActionBlocks().map(block => block.id === id ? { ...block, ...updates } : block));
+  };
+
+  const removeActionBlock = (id: string) => {
+    syncActionBlocks(getActionBlocks().filter(block => block.id !== id));
+  };
+
+  const ActionButtons: React.FC<{ afterId?: string }> = ({ afterId }) => (
+    <div className="grid grid-cols-3 gap-2">
+      <button
+        onClick={() => addActionBlock('bocCachDien', afterId)}
+        className="py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+      >
+        <Plus size={13} /> Bọc
+      </button>
+      <button
+        onClick={() => addActionBlock('dieuKhienGau', afterId)}
+        className="py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+      >
+        <Plus size={13} /> ĐK gàu
+      </button>
+      <button
+        onClick={() => addActionBlock('thaoBocCachDien', afterId)}
+        className="py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+      >
+        <Plus size={13} /> Tháo bọc
+      </button>
+    </div>
+  );
+
+  const renderActionBlock = (block: SequenceActionBlock, idx: number) => {
+    const title = block.type === 'bocCachDien'
+      ? 'Bọc cách điện'
+      : block.type === 'dieuKhienGau'
+        ? 'Điều khiển gàu'
+        : 'Tháo bọc cách điện';
+
+    return (
+      <div key={block.id} className="space-y-2">
+        <div className="p-3 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-3 relative group">
+          <button
+            onClick={() => removeActionBlock(block.id)}
+            className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+          >
+            <Trash2 size={12} />
+          </button>
+          <div className="text-xs font-bold text-zinc-500 uppercase">
+            Bước linh hoạt {idx + 1}: {title}
+          </div>
+
+          {block.type === 'dieuKhienGau' ? (
+            <>
+              <Input
+                label="Để làm gì"
+                value={block.deLamGi || ''}
+                onChange={e => updateActionBlock(block.id, { deLamGi: e.target.value })}
+              />
+              <textarea
+                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={3}
+                value={block.thucHien || ''}
+                onChange={e => updateActionBlock(block.id, { thucHien: e.target.value })}
+                placeholder="Thực hiện..."
+              />
+            </>
+          ) : (
+            <>
+              <Input
+                label={block.type === 'bocCachDien' ? 'Vị trí bọc' : 'Vị trí tháo'}
+                value={block.viTri || ''}
+                onChange={e => updateActionBlock(block.id, { viTri: e.target.value })}
+              />
+              <textarea
+                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 resize-none"
+                rows={3}
+                value={block.trinhTu || ''}
+                onChange={e => updateActionBlock(block.id, { trinhTu: e.target.value })}
+                placeholder={block.type === 'bocCachDien' ? 'Trình tự bọc cách điện...' : 'Trình tự tháo bọc...'}
+              />
+            </>
+          )}
+        </div>
+        <ActionButtons afterId={block.id} />
+      </div>
+    );
+  };
+
+  const actionBlocks = getActionBlocks();
 
   return (
     <Accordion
@@ -132,127 +266,13 @@ export const ConstructionSequenceForm: React.FC = () => {
           </div>
         )}
 
-        {/* Bọc cách điện */}
-        <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-bold text-zinc-700">Bọc cách điện</div>
-            <button
-              onClick={() => addBocCachDien(activeJobIdx)}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded transition-colors flex items-center gap-1"
-            >
-              <Plus size={14} /> Thêm
-            </button>
+        <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl shadow-sm space-y-4">
+          <div>
+            <div className="text-sm font-bold text-zinc-700">Các bước linh hoạt</div>
+            <div className="text-[11px] text-zinc-400 mt-0.5">Sau mỗi bước có thể chèn Bọc, ĐK gàu hoặc Tháo bọc.</div>
           </div>
-          {seq.bocCachDienBlocks.map((block, idx) => (
-            <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
-              <button
-                onClick={() => removeBocCachDien(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-              >
-                <Trash2 size={12} />
-              </button>
-              <Input
-                label="Vị trí bọc"
-                value={block.viTri}
-                onChange={e => {
-                  const updated = seq.bocCachDienBlocks.map(b => b.id === block.id ? { ...b, viTri: e.target.value } : b);
-                  updateSequence('bocCachDienBlocks', updated);
-                }}
-              />
-              <textarea
-                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-                value={block.trinhTu}
-                onChange={e => {
-                  const updated = seq.bocCachDienBlocks.map(b => b.id === block.id ? { ...b, trinhTu: e.target.value } : b);
-                  updateSequence('bocCachDienBlocks', updated);
-                }}
-                placeholder="Trình tự bọc cách điện..."
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Điều khiển gàu */}
-        <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-bold text-zinc-700">Điều khiển gàu</div>
-            <button
-              onClick={() => addDieuKhienGau(activeJobIdx)}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded transition-colors flex items-center gap-1"
-            >
-              <Plus size={14} /> Thêm
-            </button>
-          </div>
-          {seq.dieuKhienGauBlocks.map((block, idx) => (
-            <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
-              <button
-                onClick={() => removeDieuKhienGau(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-              >
-                <Trash2 size={12} />
-              </button>
-              <Input
-                label="Để làm gì"
-                value={block.deLamGi}
-                onChange={e => {
-                  const updated = seq.dieuKhienGauBlocks.map(b => b.id === block.id ? { ...b, deLamGi: e.target.value } : b);
-                  updateSequence('dieuKhienGauBlocks', updated);
-                }}
-              />
-              <textarea
-                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-                value={block.thucHien}
-                onChange={e => {
-                  const updated = seq.dieuKhienGauBlocks.map(b => b.id === block.id ? { ...b, thucHien: e.target.value } : b);
-                  updateSequence('dieuKhienGauBlocks', updated);
-                }}
-                placeholder="Thực hiện..."
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Tháo bọc cách điện */}
-        <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-bold text-zinc-700">Tháo bọc cách điện</div>
-            <button
-              onClick={() => addThaoBocCachDien(activeJobIdx)}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded transition-colors flex items-center gap-1"
-            >
-              <Plus size={14} /> Thêm
-            </button>
-          </div>
-          {seq.thaoBocCachDienBlocks.map((block, idx) => (
-            <div key={block.id} className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 space-y-2 relative group">
-              <button
-                onClick={() => removeThaoBocCachDien(block.id)}
-                className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-              >
-                <Trash2 size={12} />
-              </button>
-              <Input
-                label="Vị trí tháo"
-                value={block.viTri}
-                onChange={e => {
-                  const updated = seq.thaoBocCachDienBlocks.map(b => b.id === block.id ? { ...b, viTri: e.target.value } : b);
-                  updateSequence('thaoBocCachDienBlocks', updated);
-                }}
-              />
-              <textarea
-                className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-                value={block.trinhTu}
-                onChange={e => {
-                  const updated = seq.thaoBocCachDienBlocks.map(b => b.id === block.id ? { ...b, trinhTu: e.target.value } : b);
-                  updateSequence('thaoBocCachDienBlocks', updated);
-                }}
-                placeholder="Trình tự tháo bọc..."
-              />
-            </div>
-          ))}
+          {actionBlocks.length === 0 && <ActionButtons />}
+          {actionBlocks.map((block, idx) => renderActionBlock(block, idx))}
         </div>
 
         {/* Note */}

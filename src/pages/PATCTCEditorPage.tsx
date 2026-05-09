@@ -118,6 +118,8 @@ export const PATCTCEditorPage: React.FC = () => {
             dataSnapshot: JSON.stringify(currentData),
             tags: [currentData.dz, `cột ${currentData.cot}`, currentData.donViThiCong]
           });
+        } catch (error) {
+          console.error('Auto-save PATCTC document error:', error);
         } finally {
           isSavingRef.current = false;
           setIsSaving(false);
@@ -204,6 +206,9 @@ export const PATCTCEditorPage: React.FC = () => {
       }
       setSaveNotif(true);
       setTimeout(() => setSaveNotif(false), 2000);
+    } catch (error: any) {
+      console.error('Save PATCTC document error:', error);
+      alert(error?.message || 'Không thể lưu phương án. Vui lòng thử lại.');
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);

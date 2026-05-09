@@ -4,12 +4,16 @@ import { toast } from 'sonner';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuthStore } from './useAuthStore';
 import { api } from '../utils/api';
-import { supabase } from '../utils/supabaseClient';
 
 // ─── Realtime channel refs ────────────────────────────────────────────────────
 // Stored outside Zustand state (not serialisable) so unsubscribe can reach it.
 let _notificationChannel: RealtimeChannel | null = null;
 let _postsChannel: RealtimeChannel | null = null;
+
+async function getSupabaseClient() {
+  const module = await import('../utils/supabaseClient');
+  return module.supabase;
+}
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 // Returns a function that delays invoking `fn` until `wait` ms have elapsed
@@ -76,6 +80,9 @@ export interface SavedDocument {
   description: string;
   authorId: string;
   authorName: string;
+  approvedById?: string;
+  approvedByName?: string;
+  approvedAt?: string;
   dataSnapshot: string;
   createdAt: string;
   updatedAt: string;
@@ -152,6 +159,9 @@ interface SocialState {
   postsPage: number;
   postsHasNextPage: boolean;
   savedDocuments: SavedDocument[];
+  approvedDocuments: SavedDocument[];
+  reviewDocuments: SavedDocument[];
+  reviewDocumentsByStatus: Record<'completed' | 'approved', SavedDocument[]>;
   isLoaded: boolean;
   relationshipsByUserId: Record<string, RelationshipSummary>;
   followersByUserId: Record<string, FollowUserSummary[]>;
@@ -165,6 +175,8 @@ interface SocialState {
 
   fetchPosts: (page?: number) => Promise<void>;
   fetchDocuments: () => Promise<void>;
+  fetchApprovedDocuments: () => Promise<void>;
+  fetchReviewDocuments: (status?: 'completed' | 'approved') => Promise<void>;
   fetchRelationship: (userId: string) => Promise<void>;
   fetchFollowers: (userId: string) => Promise<void>;
   fetchFollowing: (userId: string) => Promise<void>;
@@ -210,6 +222,9 @@ export const useSocialStore = create<SocialState>()(
       postsPage: 1,
       postsHasNextPage: false,
       savedDocuments: [],
+      approvedDocuments: [],
+      reviewDocuments: [],
+      reviewDocumentsByStatus: { completed: [], approved: [] },
       isLoaded: false,
       relationshipsByUserId: {},
       followersByUserId: {},
@@ -647,7 +662,9 @@ export const useSocialStore = create<SocialState>()(
         }
       },
 
-      subscribeToNotifications: (userId) => {
+      subscribeToNotifications: async (userId) => {
+        const supabase = await getSupabaseClient();
+        if (useAuthStore.getState().user?.id !== userId) return;
         // Tear down any previous channel before opening a new one
         if (_notificationChannel) {
           supabase.removeChannel(_notificationChannel);
@@ -701,14 +718,17 @@ export const useSocialStore = create<SocialState>()(
           });
       },
 
-      unsubscribeFromNotifications: () => {
-        if (_notificationChannel) {
-          supabase.removeChannel(_notificationChannel);
-          _notificationChannel = null;
-        }
+      unsubscribeFromNotifications: async () => {
+        if (!_notificationChannel) return;
+        const channel = _notificationChannel;
+        _notificationChannel = null;
+        const supabase = await getSupabaseClient();
+        supabase.removeChannel(channel);
       },
 
-      subscribeToPosts: () => {
+      subscribeToPosts: async () => {
+        const supabase = await getSupabaseClient();
+        if (!useAuthStore.getState().isAuthenticated) return;
         if (_postsChannel) {
           supabase.removeChannel(_postsChannel);
           _postsChannel = null;
@@ -737,11 +757,12 @@ export const useSocialStore = create<SocialState>()(
           });
       },
 
-      unsubscribeFromPosts: () => {
-        if (_postsChannel) {
-          supabase.removeChannel(_postsChannel);
-          _postsChannel = null;
-        }
+      unsubscribeFromPosts: async () => {
+        if (!_postsChannel) return;
+        const channel = _postsChannel;
+        _postsChannel = null;
+        const supabase = await getSupabaseClient();
+        supabase.removeChannel(channel);
       },
 
       resetSocialState: () => {
@@ -750,6 +771,9 @@ export const useSocialStore = create<SocialState>()(
           postsPage: 1,
           postsHasNextPage: false,
           savedDocuments: [],
+          approvedDocuments: [],
+          reviewDocuments: [],
+          reviewDocumentsByStatus: { completed: [], approved: [] },
           isLoaded: false,
           relationshipsByUserId: {},
           followersByUserId: {},
@@ -772,41 +796,83 @@ export const useSocialStore = create<SocialState>()(
             status: doc.status,
             tags: doc.tags,
           });
-          set(state => ({
-            savedDocuments: [{
-              ...doc,
-              id: result.id,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              downloadCount: 0,
-            }, ...state.savedDocuments],
-          }));
+          await Promise.all([get().fetchDocuments(), get().fetchApprovedDocuments()]);
         } catch (error) {
           console.error('Save document error:', error);
+          throw error;
+        }
+      },
+
+      fetchApprovedDocuments: async () => {
+        try {
+          const result = await api.get<{ data: SavedDocument[]; total: number; hasNextPage: boolean }>('/documents?page=1&limit=50');
+          set({ approvedDocuments: Array.isArray(result?.data) ? result.data : [] });
+        } catch (error) {
+          console.error('Fetch approved documents error:', error);
+        }
+      },
+
+      fetchReviewDocuments: async (status = 'completed') => {
+        try {
+          const docs = await api.get<SavedDocument[]>(`/documents/review?status=${status}`);
+          const safeDocs = Array.isArray(docs) ? docs : [];
+          set(state => ({
+            reviewDocuments: safeDocs,
+            reviewDocumentsByStatus: {
+              ...state.reviewDocumentsByStatus,
+              [status]: safeDocs,
+            },
+          }));
+        } catch (error) {
+          console.error('Fetch review documents error:', error);
+          throw error;
         }
       },
 
       updateDocument: async (docId, updates) => {
         try {
           await api.put(`/documents/${docId}`, updates);
-          set(state => ({
-            savedDocuments: state.savedDocuments.map(d =>
-              d.id === docId ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
-            ),
-          }));
+          await Promise.all([get().fetchDocuments(), get().fetchApprovedDocuments()]);
         } catch (error) {
           console.error('Update document error:', error);
+          throw error;
         }
       },
 
       updateDocumentStatus: async (docId, status) => {
         try {
           await api.put(`/documents/${docId}`, { status });
+          const currentUser = useAuthStore.getState().user;
+          const approvalFields = status === 'approved'
+            ? { approvedById: currentUser?.id, approvedByName: currentUser?.name, approvedAt: new Date().toISOString() }
+            : {};
           set(state => ({
             savedDocuments: state.savedDocuments.map(d =>
-              d.id === docId ? { ...d, status, updatedAt: new Date().toISOString() } : d
+              d.id === docId ? { ...d, ...approvalFields, status, updatedAt: new Date().toISOString() } : d
+            ),
+            reviewDocuments: state.reviewDocuments.map(d =>
+              d.id === docId ? { ...d, ...approvalFields, status, updatedAt: new Date().toISOString() } : d
+            ),
+            reviewDocumentsByStatus: status === 'approved'
+              ? {
+                  completed: state.reviewDocumentsByStatus.completed.filter(d => d.id !== docId),
+                  approved: [
+                    ...[
+                      ...state.reviewDocumentsByStatus.completed,
+                      ...state.reviewDocumentsByStatus.approved,
+                    ]
+                      .filter(d => d.id === docId)
+                      .slice(0, 1)
+                      .map(d => ({ ...d, ...approvalFields, status, updatedAt: new Date().toISOString() })),
+                    ...state.reviewDocumentsByStatus.approved.filter(d => d.id !== docId),
+                  ],
+                }
+              : state.reviewDocumentsByStatus,
+            approvedDocuments: state.approvedDocuments.map(d =>
+              d.id === docId ? { ...d, ...approvalFields, status, updatedAt: new Date().toISOString() } : d
             ),
           }));
+          await Promise.all([get().fetchDocuments(), get().fetchApprovedDocuments()]);
           return { ok: true };
         } catch (error: any) {
           console.error('Update document status error:', error);
@@ -817,11 +883,10 @@ export const useSocialStore = create<SocialState>()(
       deleteDocument: async (docId) => {
         try {
           await api.delete(`/documents/${docId}`);
-          set(state => ({
-            savedDocuments: state.savedDocuments.filter(d => d.id !== docId),
-          }));
+          await Promise.all([get().fetchDocuments(), get().fetchApprovedDocuments()]);
         } catch (error) {
           console.error('Delete document error:', error);
+          throw error;
         }
       },
 

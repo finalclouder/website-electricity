@@ -188,19 +188,34 @@ export async function formatDocuments(supabase: SupabaseClient, docs: DocumentRo
     downloadCounts.set(documentId, (downloadCounts.get(documentId) || 0) + 1);
   }
 
-  return docs.map((doc) => ({
-    id: doc.id,
-    title: doc.title,
-    description: doc.description || '',
-    authorId: doc.author_id,
-    authorName: authors.get(doc.author_id)?.name || '',
-    dataSnapshot: doc.data_snapshot,
-    status: doc.status,
-    tags: toArray(doc.tags),
-    createdAt: doc.created_at,
-    updatedAt: doc.updated_at,
-    downloadCount: downloadCounts.get(doc.id) || 0,
-  }));
+  return docs.map((doc) => {
+    let approval: Record<string, string | undefined> = {};
+    try {
+      const parsed = JSON.parse(doc.data_snapshot || '{}');
+      if (parsed?._approval && typeof parsed._approval === 'object') {
+        approval = {
+          approvedById: typeof parsed._approval.approvedById === 'string' ? parsed._approval.approvedById : undefined,
+          approvedByName: typeof parsed._approval.approvedByName === 'string' ? parsed._approval.approvedByName : undefined,
+          approvedAt: typeof parsed._approval.approvedAt === 'string' ? parsed._approval.approvedAt : undefined,
+        };
+      }
+    } catch {}
+
+    return {
+      id: doc.id,
+      title: doc.title,
+      description: doc.description || '',
+      authorId: doc.author_id,
+      authorName: authors.get(doc.author_id)?.name || '',
+      ...approval,
+      dataSnapshot: doc.data_snapshot,
+      status: doc.status,
+      tags: toArray(doc.tags),
+      createdAt: doc.created_at,
+      updatedAt: doc.updated_at,
+      downloadCount: downloadCounts.get(doc.id) || 0,
+    };
+  });
 }
 
 export async function formatNotifications(supabase: SupabaseClient, rows: any[]) {

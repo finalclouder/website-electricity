@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, FileText, LogOut, Settings, User, Users, FolderOpen, UserCheck, X } from 'lucide-react';
+import { Bell, ClipboardCheck, FileText, LogOut, Settings, User, Users, FolderOpen, UserCheck, X } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useSocialStore } from '../../store/useSocialStore';
 import { useNavigationStore } from '../../store/useNavigationStore';
@@ -44,6 +44,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
     { id: 'patctc', label: 'Lập phương án', icon: FileText },
     { id: 'social', label: 'Cộng đồng', icon: Users },
     { id: 'documents', label: 'Tài liệu đã lưu', icon: FolderOpen },
+    ...(user?.role === 'admin' ? [{ id: 'review-documents', label: 'Tài liệu cần xét duyệt', icon: ClipboardCheck }] : []),
+    { id: 'approved-documents', label: 'Tài liệu đã duyệt', icon: UserCheck },
   ];
 
   const safeNotifications = Array.isArray(notifications) ? notifications : [];
@@ -200,7 +202,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
                             key={notification.id}
                             className={`px-4 py-3 border-b border-zinc-50 last:border-b-0 ${notification.isRead ? 'bg-white' : 'bg-blue-50/50'}`}
                           >
-                            {/* Clickable row — navigates to the relevant entity */}
+                            {/* Clickable row - navigates to the relevant entity */}
                             <button
                               className="flex items-start gap-3 w-full text-left hover:opacity-80 transition-opacity"
                               onClick={() => handleNotificationClick(notification)}
@@ -310,3 +312,4 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ activeTab, onTabChange, 
     </div>
   );
 };
+

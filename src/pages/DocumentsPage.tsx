@@ -11,13 +11,13 @@ import { exportPatctcPdf } from '../utils/exportPatctcPdf';
 
 const STATUS_MAP = {
   draft: { label: 'Bản nháp', color: 'zinc', icon: Edit3 },
-  completed: { label: 'Hoàn thành', color: 'blue', icon: CheckCircle2 },
+  completed: { label: 'Chờ duyệt', color: 'amber', icon: Clock },
   approved: { label: 'Đã duyệt', color: 'green', icon: CheckCircle2 }
 } as const;
 
-export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void; onTabChange?: (tab: string) => void }> = ({ onViewProfile, onTabChange }) => {
+export const DocumentsPage: React.FC<{ mode?: 'saved' | 'approved'; onViewProfile?: (userId: string) => void; onTabChange?: (tab: string) => void }> = ({ mode = 'saved', onViewProfile, onTabChange }) => {
   const { user } = useAuthStore();
-  const { savedDocuments, saveDocument, deleteDocument, updateDocumentStatus, trackDocumentDownload } = useSocialStore();
+  const { savedDocuments, approvedDocuments, saveDocument, deleteDocument, updateDocumentStatus, trackDocumentDownload, fetchApprovedDocuments } = useSocialStore();
   const { data } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -26,6 +26,12 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
   // Preview modal state
   const [previewDoc, setPreviewDoc] = useState<SavedDocument | null>(null);
   const [previewData, setPreviewData] = useState<PATCTCData | null>(null);
+  const isApprovedMode = mode === 'approved';
+  const documents = isApprovedMode ? approvedDocuments : savedDocuments;
+
+  React.useEffect(() => {
+    if (isApprovedMode) fetchApprovedDocuments();
+  }, [isApprovedMode, fetchApprovedDocuments]);
 
   const openPreview = (doc: SavedDocument) => {
     try {
@@ -37,20 +43,25 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     }
   };
 
-  const handleSaveCurrent = () => {
+  const handleSaveCurrent = async () => {
     if (!user) return;
     const title = `PA ${data.soVb} - ĐZ ${data.dz} cột ${data.cot}`;
     const description = data.jobItems.join(', ');
 
-    saveDocument({
-      title,
-      description,
-      authorId: user.id,
-      authorName: user.name,
-      dataSnapshot: JSON.stringify(data),
-      status: 'draft',
-      tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
-    });
+    try {
+      await saveDocument({
+        title,
+        description,
+        authorId: user.id,
+        authorName: user.name,
+        dataSnapshot: JSON.stringify(data),
+        status: 'draft',
+        tags: [data.dz, `cột ${data.cot}`, data.donViThiCong]
+      });
+      showNotification('Đã lưu phương án hiện tại');
+    } catch (error: any) {
+      showNotification(error?.message || 'Không thể lưu phương án', 'error');
+    }
   };
 
   const handleLoad = async (doc: SavedDocument) => {
@@ -137,18 +148,20 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const canPublishDocument = (doc: SavedDocument) => user?.role === 'admin' || doc.authorId === user?.id;
+  const canSubmitDocument = (doc: SavedDocument) => !isApprovedMode && doc.authorId === user?.id && doc.status === 'draft';
+  const canApproveDocument = (doc: SavedDocument) => !isApprovedMode && user?.role === 'admin' && doc.status !== 'approved';
 
   const handleApproveDocument = async (doc: SavedDocument) => {
-    const result = await updateDocumentStatus(doc.id, 'approved');
+    const nextStatus = user?.role === 'admin' ? 'approved' : 'completed';
+    const result = await updateDocumentStatus(doc.id, nextStatus);
     if (!result.ok) {
-      showNotification(result.error || 'Không thể công khai tài liệu', 'error');
+      showNotification(result.error || 'Không thể cập nhật trạng thái tài liệu', 'error');
       return;
     }
-    showNotification(doc.authorId === user?.id && user?.role !== 'admin' ? 'Đã công khai tài liệu' : 'Đã duyệt tài liệu');
+    showNotification(nextStatus === 'approved' ? 'Đã duyệt tài liệu' : 'Đã gửi phương án cho Đội trưởng duyệt');
   };
 
-  const filtered = savedDocuments
+  const filtered = documents
     .filter(doc => {
       if (filterStatus !== 'all' && doc.status !== filterStatus) return false;
       if (searchQuery) {
@@ -174,15 +187,17 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-zinc-900">Tài liệu đã lưu</h2>
-          <p className="text-sm text-zinc-500">{savedDocuments.length} tài liệu</p>
+          <h2 className="text-xl font-bold text-zinc-900">{isApprovedMode ? 'Tài liệu đã được duyệt bởi Đội trưởng' : 'Tài liệu đã lưu'}</h2>
+          <p className="text-sm text-zinc-500">{documents.length} tài liệu</p>
         </div>
-        <button
-          onClick={handleSaveCurrent}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-        >
-          <Plus size={16} /> Lưu PA hiện tại
-        </button>
+        {!isApprovedMode && (
+          <button
+            onClick={handleSaveCurrent}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
+          >
+            <Plus size={16} /> Lưu PA hiện tại
+          </button>
+        )}
       </div>
 
       {/* Search & Filter */}
@@ -197,7 +212,7 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
           />
         </div>
         <div className="flex gap-1.5 bg-white border border-zinc-200 rounded-xl p-1 overflow-x-auto">
-          {['all', 'draft', 'completed', 'approved'].map(status => (
+          {(isApprovedMode ? ['all'] : ['all', 'draft', 'completed', 'approved']).map(status => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
@@ -291,15 +306,23 @@ export const DocumentsPage: React.FC<{ onViewProfile?: (userId: string) => void;
                     <Copy size={14} /> Chép
                   </button>
                 )}
-                {canPublishDocument(doc) && doc.status !== 'approved' && (
-                  <button
-                    onClick={() => handleApproveDocument(doc)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 text-xs font-medium whitespace-nowrap transition-colors"
-                  >
-                    <CheckCircle2 size={14} /> {doc.authorId === user?.id && user?.role !== 'admin' ? 'Công khai' : 'Duyệt'}
-                  </button>
-                )}
-                {(user?.role === 'admin' || doc.authorId === user?.id) && (
+                  {canSubmitDocument(doc) && (
+                    <button
+                      onClick={() => handleApproveDocument(doc)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 text-xs font-medium whitespace-nowrap transition-colors"
+                    >
+                      <CheckCircle2 size={14} /> Gửi Đội trưởng duyệt
+                    </button>
+                  )}
+                  {canApproveDocument(doc) && (
+                    <button
+                      onClick={() => handleApproveDocument(doc)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg text-green-600 text-xs font-medium whitespace-nowrap transition-colors"
+                    >
+                      <CheckCircle2 size={14} /> Duyệt
+                    </button>
+                  )}
+                  {!isApprovedMode && (user?.role === 'admin' || doc.authorId === user?.id) && (
                   <button
                     onClick={() => {
                       if (confirm('Xóa tài liệu này?')) deleteDocument(doc.id);

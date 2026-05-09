@@ -21,9 +21,18 @@ export async function handleDocuments(request: Request, env: Env, pathname: stri
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     const result = await formatResult(
-      supabase.from('documents').select(DOCUMENT_SELECT, { count: 'exact' }).in('status', ['completed', 'approved']).order('updated_at', { ascending: false }).range(from, to),
+      supabase.from('documents').select(DOCUMENT_SELECT, { count: 'exact' }).eq('status', 'approved').order('updated_at', { ascending: false }).range(from, to),
     );
     return json({ data: result.data, total: result.count, hasNextPage: from + result.data.length < result.count });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/documents/review') {
+    if (user.role !== 'admin') return json({ error: 'Bạn không có quyền xem tài liệu chờ duyệt' }, 403);
+    const status = url.searchParams.get('status') === 'approved' ? 'approved' : 'completed';
+    const result = await formatResult(
+      supabase.from('documents').select(DOCUMENT_SELECT).eq('status', status).order('updated_at', { ascending: false }),
+    );
+    return json(result.data);
   }
 
   if (request.method === 'GET' && pathname === '/api/documents/my') {
@@ -126,12 +135,33 @@ export async function handleDocuments(request: Request, env: Env, pathname: stri
     const { title, description, dataSnapshot, status, tags } = await readJson<any>(request);
     if (title && title.length > 200) return json({ error: 'Tiêu đề quá dài (tối đa 200 ký tự)' }, 400);
     if (status !== undefined && !['draft', 'completed', 'approved'].includes(status)) return json({ error: 'Trạng thái không hợp lệ' }, 400);
-    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (status === 'approved' && user.role !== 'admin') return json({ error: 'Chỉ admin mới có quyền duyệt tài liệu' }, 403);
+    const now = new Date().toISOString();
+    const payload: Record<string, unknown> = { updated_at: now };
     if (title !== undefined) payload.title = title;
     if (description !== undefined) payload.description = description;
     if (dataSnapshot !== undefined) payload.data_snapshot = dataSnapshot;
     if (status !== undefined) payload.status = status;
     if (tags !== undefined) payload.tags = Array.isArray(tags) ? tags : [];
+    if (status === 'approved') {
+      try {
+        const snapshot = JSON.parse((dataSnapshot ?? doc.data_snapshot) || '{}');
+        snapshot._approval = {
+          approvedById: user.id,
+          approvedByName: user.name,
+          approvedAt: now,
+        };
+        payload.data_snapshot = JSON.stringify(snapshot);
+      } catch {
+        payload.data_snapshot = JSON.stringify({
+          _approval: {
+            approvedById: user.id,
+            approvedByName: user.name,
+            approvedAt: now,
+          },
+        });
+      }
+    }
     const { error } = await supabase.from('documents').update(payload).eq('id', id);
     if (error) throw error;
     return json({ message: 'Đã cập nhật tài liệu' });

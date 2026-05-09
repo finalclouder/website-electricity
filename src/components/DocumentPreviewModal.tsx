@@ -2,7 +2,7 @@ import React from 'react';
 import { Calendar, Copy, Download, FileText, MapPin, Users, Wrench, X, Zap } from 'lucide-react';
 import { SavedDocument } from '../store/useSocialStore';
 import { PATCTCData } from '../types';
-import { timeAgo } from '../utils/date';
+import { formatDateTime, timeAgo } from '../utils/date';
 
 type DetailMode = 'basic' | 'detailed';
 
@@ -10,8 +10,8 @@ interface DocumentPreviewModalProps {
   document: SavedDocument | null;
   data: PATCTCData | null;
   onClose: () => void;
-  onOpen: (document: SavedDocument) => void;
-  openLabel: string;
+  onOpen?: (document: SavedDocument) => void;
+  openLabel?: string;
   onClone?: (document: SavedDocument) => void;
   onExportPdf?: (document: SavedDocument) => void;
   onExportWord?: (document: SavedDocument) => void;
@@ -30,7 +30,7 @@ const STATUS_STYLES = {
 
 const STATUS_LABELS = {
   approved: 'Đã duyệt',
-  completed: 'Hoàn thành',
+  completed: 'Chờ duyệt',
   draft: 'Bản nháp'
 } as const;
 
@@ -264,6 +264,11 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[document.status]}`}>
               {STATUS_LABELS[document.status]}
             </span>
+            {document.status === 'approved' && (
+              <span className="text-[11px] font-medium text-green-700">
+                Đội trưởng duyệt: {document.approvedByName || 'Không rõ'} · {formatDateTime(document.approvedAt || document.updatedAt)}
+              </span>
+            )}
             {showTags && document.tags?.filter(Boolean).map((tag) => (
               <span key={tag} className="px-2 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full">
                 {tag}
@@ -304,15 +309,17 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                 <Copy size={14} /> {cloneLabel}
               </button>
             )}
-            <button
-              onClick={() => {
-                onOpen(document);
-                onClose();
-              }}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-            >
-              <Download size={14} /> {openLabel}
-            </button>
+            {onOpen && openLabel && (
+              <button
+                onClick={() => {
+                  onOpen(document);
+                  onClose();
+                }}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
+              >
+                <Download size={14} /> {openLabel}
+              </button>
+            )}
           </div>
         </div>
       </div>

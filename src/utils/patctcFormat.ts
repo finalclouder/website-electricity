@@ -1,6 +1,6 @@
 const LOCATION_PREFIX = "tại cột";
 
-export const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện.";
+export const HANG_MUC_SUFFIX = ", bằng phương pháp thi công hotline.";
 export const SHORT_HOTLINE_SUFFIX = " bằng phương pháp Hotline.";
 
 export function ensureBulletFormat(text: string): string {
@@ -35,6 +35,7 @@ export function cleanJobItem(text: string): string {
   if (!text) return "";
 
   let cleaned = text.replace(/, bằng phương pháp thi công hotline, sử dụng găng cao su và xe gàu cách điện\.?$/, "");
+  cleaned = cleaned.replace(/, bằng phương pháp thi công hotline\.?$/, "");
   cleaned = cleaned.replace(/ bằng phương pháp Hotline\.?$/, "");
   return cleaned.trim().replace(/\.+$/, "");
 }

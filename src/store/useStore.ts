@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PATCTCData, WorkType, RiskItem, Personnel, ConstructionSequence, BocCachDienBlock, DieuKhienGauBlock, ThaoBocCachDienBlock } from '../types';
+import { PATCTCData, WorkType, RiskItem, Personnel, ConstructionSequence, BocCachDienBlock, DieuKhienGauBlock, ThaoBocCachDienBlock, SequenceActionBlock } from '../types';
 import { WORK_TYPES, PERSONNEL_MASTER, TOOLS_MASTER } from '../constants';
 import { cleanJobItem, ensureBulletFormat, ensureLocation, formatJobItem } from '../utils/patctcFormat';
 
@@ -18,13 +18,29 @@ function cloneThaoBocCachDienBlocks(blocks?: ThaoBocCachDienBlock[]): ThaoBocCac
   return (blocks || []).map((block) => ({ ...block }));
 }
 
+function cloneActionBlocks(sequence?: Partial<ConstructionSequence> | null): SequenceActionBlock[] | undefined {
+  if (Array.isArray(sequence?.actionBlocks)) {
+    return sequence.actionBlocks.map((block) => ({ ...block }));
+  }
+
+  const legacyBlocks: SequenceActionBlock[] = [
+    ...(sequence?.bocCachDienBlocks || []).map((block) => ({ ...block, type: 'bocCachDien' as const })),
+    ...(sequence?.dieuKhienGauBlocks || []).map((block) => ({ ...block, type: 'dieuKhienGau' as const })),
+    ...(sequence?.thaoBocCachDienBlocks || []).map((block) => ({ ...block, type: 'thaoBocCachDien' as const }))
+  ];
+
+  return legacyBlocks.length > 0 ? legacyBlocks : undefined;
+}
+
 function cloneSequence(sequence?: Partial<ConstructionSequence> | null): ConstructionSequence {
+  const actionBlocks = cloneActionBlocks(sequence);
   return {
     eyeCheckText: sequence?.eyeCheckText,
     guongKiemTra: sequence?.guongKiemTra || '',
     bocCachDienBlocks: cloneBocCachDienBlocks(sequence?.bocCachDienBlocks),
     dieuKhienGauBlocks: cloneDieuKhienGauBlocks(sequence?.dieuKhienGauBlocks),
-    thaoBocCachDienBlocks: cloneThaoBocCachDienBlocks(sequence?.thaoBocCachDienBlocks)
+    thaoBocCachDienBlocks: cloneThaoBocCachDienBlocks(sequence?.thaoBocCachDienBlocks),
+    ...(actionBlocks ? { actionBlocks } : {})
   };
 }
 
@@ -125,6 +141,7 @@ function hasSequenceContent(sequence?: Partial<ConstructionSequence> | null): bo
     || sequence.bocCachDienBlocks?.length
     || sequence.dieuKhienGauBlocks?.length
     || sequence.thaoBocCachDienBlocks?.length
+    || sequence.actionBlocks?.length
   );
 }
 

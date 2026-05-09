@@ -588,6 +588,13 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
                       dieuKhienGauBlocks: data.dieuKhienGauBlocks || [],
                       thaoBocCachDienBlocks: data.thaoBocCachDienBlocks || [],
                     };
+                const actionBlocks = Array.isArray(seqData.actionBlocks)
+                  ? seqData.actionBlocks
+                  : [
+                      ...(seqData.bocCachDienBlocks || []).map((block: any) => ({ ...block, type: 'bocCachDien' })),
+                      ...(seqData.dieuKhienGauBlocks || []).map((block: any) => ({ ...block, type: 'dieuKhienGau' })),
+                      ...(seqData.thaoBocCachDienBlocks || []).map((block: any) => ({ ...block, type: 'thaoBocCachDien' })),
+                    ];
 
                 const isHM2 = data.jobItems.length > 1 && jobIdx === 1;
                 const allSteps: string[] = [];
@@ -608,24 +615,24 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
                   allSteps.push(`Kiểm tra bằng mắt ${text}${text.endsWith('.') ? '' : '.'}`);
                 }
 
-                (seqData.bocCachDienBlocks || []).forEach((block: any) => {
-                  const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
-                  const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
-                  allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
-                  allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
-                });
-                if ((seqData.bocCachDienBlocks || []).length > 0) {
-                  allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
-                }
+                actionBlocks.forEach((block: any) => {
+                  if (block.type === 'bocCachDien') {
+                    const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
+                    const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
+                    allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
+                    allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
+                    allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
+                    return;
+                  }
 
-                (seqData.dieuKhienGauBlocks || []).forEach((block: any) => {
-                  const deLamGi = (block.deLamGi || "").trim().replace(/\.+$/, "");
-                  const thucHien = (block.thucHien || "").trim().replace(/\.+$/, "");
-                  allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
-                  allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
-                });
+                  if (block.type === 'dieuKhienGau') {
+                    const deLamGi = (block.deLamGi || "").trim().replace(/\.+$/, "");
+                    const thucHien = (block.thucHien || "").trim().replace(/\.+$/, "");
+                    allSteps.push(`Điều khiển gàu đến vị trí phù hợp để ${deLamGi || "..."}.`);
+                    allSteps.push(`Thực hiện: ${thucHien || "..."}.`);
+                    return;
+                  }
 
-                (seqData.thaoBocCachDienBlocks || []).forEach((block: any) => {
                   const viTri = (block.viTri || "").trim().replace(/\.+$/, "");
                   const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
                   allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để tháo bọc cách điện.`);
@@ -765,7 +772,7 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
                 spacing: { line: 312 },
                 children: [new TextRun({ text: "ĐƠN VỊ CÔNG TÁC CHO CÔNG VIỆC CỤ THỂ", font: "Times New Roman", size: 26, bold: true })],
               }),
-              standardText("I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/13 người", { bold: true }),
+              standardText(`I. Danh sách CBCNV đơn vị công tác: Dự kiến 6 - 8/${(data.personnel || []).length} người`, { bold: true }),
 
               // Personnel table
               new Table({
@@ -788,7 +795,7 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
                       makeCell(String(pIdx + 1), { width: { size: 6, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(toTitleCase(p.name), { width: { size: 33, type: WidthType.PERCENTAGE } }),
                       makeCell(p.gender || "", { width: { size: 10, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
-                      makeCell(p.birthYear || "", { width: { size: 9, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
+                      makeCell(p.birthYear ? String(p.birthYear) : "", { width: { size: 9, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.role || "", { width: { size: 11, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.job || "", { width: { size: 15, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),
                       makeCell(p.grade || "", { width: { size: 8, type: WidthType.PERCENTAGE }, align: AlignmentType.CENTER, vAlign: VerticalAlign.CENTER }),

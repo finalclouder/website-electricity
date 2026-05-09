@@ -21,6 +21,22 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/documents/review - Admin review queue
+router.get('/review', authMiddleware, async (req, res) => {
+  try {
+    const { role } = (req as any).user;
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Bạn không có quyền xem tài liệu chờ duyệt' });
+    }
+    const status = req.query.status === 'approved' ? 'approved' : 'completed';
+    const docs = await docDb.getByStatus(status);
+    res.json(docs);
+  } catch (error: any) {
+    console.error('Get review documents error:', error.message);
+    res.status(500).json({ error: 'Lỗi tải tài liệu chờ duyệt' });
+  }
+});
+
 // GET /api/documents/my - Get current user's documents
 router.get('/my', authMiddleware, async (req, res) => {
   try {
@@ -81,7 +97,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // PUT /api/documents/:id - Update document (owner or admin only)
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { userId, role } = (req as any).user;
+    const { userId, role, name } = (req as any).user;
     const { title, description, dataSnapshot, status, tags } = req.body;
 
     const doc = await docDb.findById(req.params.id);
@@ -101,7 +117,31 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Trạng thái không hợp lệ' });
     }
 
-    await docDb.update(req.params.id, { title, description, dataSnapshot, status, tags });
+    let nextDataSnapshot = dataSnapshot;
+    if (status === 'approved') {
+      if (role !== 'admin') {
+        return res.status(403).json({ error: 'Chỉ admin mới có quyền duyệt tài liệu' });
+      }
+      try {
+        const snapshot = JSON.parse(nextDataSnapshot || doc.dataSnapshot || '{}');
+        snapshot._approval = {
+          approvedById: userId,
+          approvedByName: name || 'Admin',
+          approvedAt: new Date().toISOString(),
+        };
+        nextDataSnapshot = JSON.stringify(snapshot);
+      } catch {
+        nextDataSnapshot = JSON.stringify({
+          _approval: {
+            approvedById: userId,
+            approvedByName: name || 'Admin',
+            approvedAt: new Date().toISOString(),
+          },
+        });
+      }
+    }
+
+    await docDb.update(req.params.id, { title, description, dataSnapshot: nextDataSnapshot, status, tags });
     res.json({ message: 'Đã cập nhật tài liệu' });
   } catch (error: any) {
     console.error('Update document error:', error.message);

@@ -50,6 +50,12 @@ export type DocumentRow = {
   updated_at: string;
 };
 
+export type DocumentApprovalMeta = {
+  approvedById?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+};
+
 export type JwtPayload = {
   userId: string;
   email: string;

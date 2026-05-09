@@ -82,12 +82,24 @@ export interface ThaoBocCachDienBlock {
   trinhTu: string;
 }
 
+export type SequenceActionType = 'bocCachDien' | 'dieuKhienGau' | 'thaoBocCachDien';
+
+export interface SequenceActionBlock {
+  id: string;
+  type: SequenceActionType;
+  viTri?: string;
+  trinhTu?: string;
+  deLamGi?: string;
+  thucHien?: string;
+}
+
 export interface ConstructionSequence {
   eyeCheckText?: string;
   guongKiemTra: string;
   bocCachDienBlocks: BocCachDienBlock[];
   dieuKhienGauBlocks: DieuKhienGauBlock[];
   thaoBocCachDienBlocks: ThaoBocCachDienBlock[];
+  actionBlocks?: SequenceActionBlock[];
 }
 
 export interface WorkZoneDiagram {

@@ -2,11 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Users, Shield, Trash2, Key, Search, Activity, FileText, MessageCircle, BarChart3, ChevronDown, AlertTriangle, CheckCircle2, Globe, Image, Type, Phone, Mail, MapPin, Clock, Plus, X, RotateCcw, Save, ChevronUp, Zap, PlusCircle, Eye, Video, Play, Upload, Loader2, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore } from '../store/useSocialStore';
+import { useStore } from '../store/useStore';
 import { useLandingStore, HeroSlide, FeatureItem } from '../store/useLandingStore';
+import type { SavedDocument } from '../store/useSocialStore';
+import type { PATCTCData } from '../types';
+import { Preview } from '../components/Preview';
+import { DocumentPreviewModal } from '../components/DocumentPreviewModal';
 import { compressHeroImage, compressGalleryImage, compressThumbnail, compressBannerImage, formatFileSize, uploadLandingVideo, MAX_LANDING_VIDEO_SIZE_MB } from '../utils/mediaUpload';
 import { LandingPage } from './LandingPage';
 
-import { parseAppDate, timeAgo } from '../utils/date';
+import { formatDateTime, parseAppDate, timeAgo } from '../utils/date';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase();
@@ -658,15 +663,29 @@ const LandingEditor: React.FC<{ showNotif: (text: string, type?: 'success' | 'er
 // ============ Main Admin Page ============
 export const AdminPage: React.FC = () => {
   const { user, getAllUsers, deleteUser, toggleUserRole, resetUserPassword } = useAuthStore();
-  const { posts, savedDocuments } = useSocialStore();
+  const { posts, savedDocuments, reviewDocuments, fetchReviewDocuments, fetchApprovedDocuments, updateDocumentStatus, deleteDocument } = useSocialStore();
 
-  const [adminTab, setAdminTab] = useState<'users' | 'landing'>('users');
+  const [adminTab, setAdminTab] = useState<'users' | 'reviews' | 'landing'>('users');
+  const [reviewTab, setReviewTab] = useState<'pending' | 'approved'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
+  const [summaryDoc, setSummaryDoc] = useState<SavedDocument | null>(null);
+  const [summaryData, setSummaryData] = useState<PATCTCData | null>(null);
+  const [detailDoc, setDetailDoc] = useState<SavedDocument | null>(null);
+  const [detailData, setDetailData] = useState<PATCTCData | null>(null);
+  const [detailZoom, setDetailZoom] = useState(0.8);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
 
   useEffect(() => {
     useAuthStore.getState().fetchUsers();
+    fetchApprovedDocuments();
+    fetchReviewDocuments('completed').catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    fetchReviewDocuments(reviewTab === 'approved' ? 'approved' : 'completed').catch(() => {
+      showNotif('Không thể tải tài liệu xét duyệt', 'error');
+    });
+  }, [reviewTab]);
 
   const [newPassword, setNewPassword] = useState('');
   const [showConfirmDelete, setShowConfirmDelete] = useState<string | null>(null);
@@ -743,6 +762,81 @@ export const AdminPage: React.FC = () => {
     showNotif(result.error || (status === 'approved' ? 'Không thể duyệt tài khoản' : 'Không thể từ chối tài khoản'), 'error');
   };
 
+  const parseReviewSnapshot = (doc: SavedDocument): PATCTCData | null => {
+    try {
+      const fallback = useStore.getState().data;
+      const parsed = JSON.parse(doc.dataSnapshot) as Partial<PATCTCData>;
+      return {
+        ...fallback,
+        ...parsed,
+        jobItems: Array.isArray(parsed.jobItems) ? parsed.jobItems : fallback.jobItems,
+        personnel: Array.isArray(parsed.personnel) ? parsed.personnel : fallback.personnel,
+        tools: Array.isArray(parsed.tools) ? parsed.tools : fallback.tools,
+        images: Array.isArray(parsed.images) ? parsed.images : fallback.images,
+        canCuBoSung: Array.isArray(parsed.canCuBoSung) ? parsed.canCuBoSung : fallback.canCuBoSung,
+        phuongThucNgayLamViec: Array.isArray(parsed.phuongThucNgayLamViec) ? parsed.phuongThucNgayLamViec : fallback.phuongThucNgayLamViec,
+        risks: Array.isArray(parsed.risks) ? parsed.risks : fallback.risks,
+        riskTableJob1: Array.isArray(parsed.riskTableJob1) ? parsed.riskTableJob1 : fallback.riskTableJob1,
+        riskTableJob2: Array.isArray(parsed.riskTableJob2) ? parsed.riskTableJob2 : fallback.riskTableJob2,
+        hotlineSafetyMeasures: Array.isArray(parsed.hotlineSafetyMeasures) ? parsed.hotlineSafetyMeasures : fallback.hotlineSafetyMeasures,
+        vatTuCap: Array.isArray(parsed.vatTuCap) ? parsed.vatTuCap : fallback.vatTuCap,
+        ks_thanhPhanHotline: Array.isArray(parsed.ks_thanhPhanHotline) ? parsed.ks_thanhPhanHotline : fallback.ks_thanhPhanHotline,
+        ks_thanhPhanDieuDo: Array.isArray(parsed.ks_thanhPhanDieuDo) ? parsed.ks_thanhPhanDieuDo : fallback.ks_thanhPhanDieuDo,
+        dvqlvhCutRequests: Array.isArray(parsed.dvqlvhCutRequests) ? parsed.dvqlvhCutRequests : fallback.dvqlvhCutRequests,
+        workZoneDiagrams: Array.isArray(parsed.workZoneDiagrams) ? parsed.workZoneDiagrams : fallback.workZoneDiagrams,
+      } as PATCTCData;
+    } catch {
+      showNotif('Không thể đọc dữ liệu phương án', 'error');
+      return null;
+    }
+  };
+
+  const openReviewSummary = (doc: SavedDocument) => {
+    const data = parseReviewSnapshot(doc);
+    if (!data) return;
+    setSummaryData(data);
+    setSummaryDoc(doc);
+  };
+
+  const openReviewDetail = (doc: SavedDocument) => {
+    const data = parseReviewSnapshot(doc);
+    if (!data) return;
+    setDetailData(data);
+    setDetailDoc(doc);
+  };
+
+  const handleApproveDocument = async (doc: SavedDocument) => {
+    const result = await updateDocumentStatus(doc.id, 'approved');
+    if (!result.ok) {
+      showNotif(result.error || 'Không thể duyệt tài liệu', 'error');
+      return;
+    }
+    await Promise.all([
+      fetchReviewDocuments('approved').catch(() => undefined),
+      fetchApprovedDocuments(),
+    ]);
+    setReviewTab('approved');
+    showNotif('Đã duyệt phương án');
+  };
+
+  const handleDeleteReviewDocument = async (doc: SavedDocument) => {
+    if (!confirm(`Xóa tài liệu "${doc.title}"?`)) return;
+    try {
+      await deleteDocument(doc.id);
+      setSummaryDoc(current => current?.id === doc.id ? null : current);
+      setSummaryData(current => summaryDoc?.id === doc.id ? null : current);
+      setDetailDoc(current => current?.id === doc.id ? null : current);
+      setDetailData(current => detailDoc?.id === doc.id ? null : current);
+      await Promise.all([
+        fetchReviewDocuments(reviewTab === 'approved' ? 'approved' : 'completed').catch(() => undefined),
+        fetchApprovedDocuments(),
+      ]);
+      showNotif('Đã xóa tài liệu');
+    } catch (error: any) {
+      showNotif(error?.message || 'Không thể xóa tài liệu', 'error');
+    }
+  };
+
   // System stats
   const totalPosts = posts.length;
   const totalComments = posts.reduce((acc, p) => acc + p.comments.length, 0);
@@ -809,6 +903,92 @@ export const AdminPage: React.FC = () => {
       {/* ===== LANDING PAGE EDITOR TAB ===== */}
       {adminTab === 'landing' && (
         <LandingEditor showNotif={showNotif} />
+      )}
+
+      {adminTab === 'reviews' && (
+        <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
+                <FileText size={16} /> Tài liệu cần xét duyệt
+              </h2>
+              <p className="text-xs text-zinc-400 mt-1">Duyệt phương án do user gửi cho Đội trưởng.</p>
+            </div>
+            <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
+              <button
+                onClick={() => setReviewTab('pending')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${reviewTab === 'pending' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+              >
+                Chờ duyệt
+              </button>
+              <button
+                onClick={() => setReviewTab('approved')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${reviewTab === 'approved' ? 'bg-white text-blue-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+              >
+                Đã duyệt
+              </button>
+            </div>
+          </div>
+
+          <div className="divide-y divide-zinc-100">
+            {reviewDocuments.length === 0 ? (
+              <div className="p-10 text-center">
+                <FileText size={40} className="mx-auto mb-3 text-zinc-200" />
+                <p className="text-sm text-zinc-400">
+                  {reviewTab === 'pending' ? 'Chưa có phương án chờ duyệt' : 'Chưa có phương án đã duyệt'}
+                </p>
+              </div>
+            ) : reviewDocuments.map(doc => (
+              <div key={doc.id} className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between hover:bg-zinc-50/60">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-zinc-900 truncate">{doc.title}</h3>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${doc.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {doc.status === 'approved' ? 'Đã duyệt' : 'Chờ duyệt'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1 truncate">{doc.description}</p>
+                  <p className="text-[11px] text-zinc-400 mt-1">Người gửi: {doc.authorName} · {timeAgo(doc.updatedAt)}</p>
+                  {doc.status === 'approved' && (
+                    <p className="text-[11px] text-green-700 mt-1 font-medium">
+                      Đội trưởng duyệt: {doc.approvedByName || 'Không rõ'} · {formatDateTime(doc.approvedAt || doc.updatedAt)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openReviewSummary(doc)}
+                    className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg flex items-center gap-1.5"
+                  >
+                    <Eye size={14} /> Xem
+                  </button>
+                  <button
+                    onClick={() => openReviewDetail(doc)}
+                    className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg flex items-center gap-1.5"
+                  >
+                    <FileText size={14} /> Xem chi tiết
+                  </button>
+                  {doc.status !== 'approved' && (
+                    <button
+                      onClick={() => handleApproveDocument(doc)}
+                      className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 size={14} /> Duyệt
+                    </button>
+                  )}
+                  {doc.status === 'approved' && (
+                    <button
+                      onClick={() => handleDeleteReviewDocument(doc)}
+                      className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg flex items-center gap-1.5"
+                    >
+                      <Trash2 size={14} /> Xóa
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ===== USERS TAB ===== */}
@@ -1087,6 +1267,92 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
         </>
+      )}
+      <DocumentPreviewModal
+        document={summaryDoc}
+        data={summaryData}
+        onClose={() => { setSummaryDoc(null); setSummaryData(null); }}
+        detailMode="detailed"
+        showPersonnelTable
+        showToolsSection
+        showTags
+      />
+
+      {detailDoc && detailData && (
+        <div className="fixed inset-0 z-[100] bg-black/65 flex items-center justify-center p-3 sm:p-5" onClick={() => { setDetailDoc(null); setDetailData(null); }}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] overflow-hidden flex flex-col"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-3 border-b border-zinc-100 bg-gradient-to-r from-blue-50 to-cyan-50 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-zinc-900 truncate">{detailDoc.title}</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Người gửi: {detailDoc.authorName} · {timeAgo(detailDoc.updatedAt)}
+                </p>
+                {detailDoc.status === 'approved' && (
+                  <p className="text-xs text-green-700 mt-0.5 font-medium">
+                    Đội trưởng duyệt: {detailDoc.approvedByName || 'Không rõ'} · {formatDateTime(detailDoc.approvedAt || detailDoc.updatedAt)}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => { setDetailDoc(null); setDetailData(null); }}
+                className="p-2 hover:bg-white/70 rounded-xl text-zinc-400 hover:text-zinc-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden bg-zinc-200">
+              <Preview
+                data={detailData}
+                activeSection=""
+                zoom={detailZoom}
+                setZoom={setDetailZoom}
+              />
+            </div>
+
+            <div className="px-5 py-3 border-t border-zinc-100 bg-white flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${detailDoc.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {detailDoc.status === 'approved' ? 'Đã duyệt' : 'Chờ duyệt'}
+                </span>
+                {detailDoc.tags?.filter(Boolean).map(tag => (
+                  <span key={tag} className="px-2 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full">{tag}</span>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setDetailDoc(null); setDetailData(null); }}
+                  className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-bold rounded-xl"
+                >
+                  Đóng
+                </button>
+                {detailDoc.status !== 'approved' && (
+                  <button
+                    onClick={async () => {
+                      await handleApproveDocument(detailDoc);
+                      setDetailDoc(null);
+                      setDetailData(null);
+                    }}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-green-500/20"
+                  >
+                    <CheckCircle2 size={16} /> Duyệt
+                  </button>
+                )}
+                {detailDoc.status === 'approved' && (
+                  <button
+                    onClick={() => handleDeleteReviewDocument(detailDoc)}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl flex items-center gap-2"
+                  >
+                    <Trash2 size={16} /> Xóa
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>

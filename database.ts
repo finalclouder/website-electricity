@@ -233,6 +233,22 @@ async function getDocumentDownloadCounts(documentIds: string[]) {
   return counts;
 }
 
+function readDocumentApprovalMeta(dataSnapshot?: string | null) {
+  if (!dataSnapshot) return {};
+  try {
+    const snapshot = JSON.parse(dataSnapshot);
+    const approval = snapshot?._approval;
+    if (!approval || typeof approval !== 'object') return {};
+    return {
+      approvedById: typeof approval.approvedById === 'string' ? approval.approvedById : undefined,
+      approvedByName: typeof approval.approvedByName === 'string' ? approval.approvedByName : undefined,
+      approvedAt: typeof approval.approvedAt === 'string' ? approval.approvedAt : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 async function deleteLikesByTargetIds(targetType: 'post' | 'comment', targetIds: string[]) {
   const ids = unique(targetIds);
   if (ids.length === 0) return;
@@ -899,6 +915,34 @@ export const postDb = {
 };
 
 export const docDb = {
+  async getByStatus(status: string) {
+    const { data: docs, error } = await getSupabase()
+      .from('documents')
+      .select('id, title, description, author_id, data_snapshot, status, tags, created_at, updated_at')
+      .eq('status', status)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    const docRows = docs || [];
+    const authors = await fetchUsersMap(docRows.map(doc => doc.author_id));
+
+    return docRows.map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      description: doc.description,
+      authorId: doc.author_id,
+      authorName: authors.get(doc.author_id)?.name || '',
+      ...readDocumentApprovalMeta(doc.data_snapshot),
+      dataSnapshot: doc.data_snapshot,
+      status: doc.status,
+      tags: safeJsonParse(doc.tags, []),
+      createdAt: doc.created_at,
+      updatedAt: doc.updated_at,
+      downloadCount: 0,
+    }));
+  },
+
   async getAll() {
     const { data: docs, error } = await getSupabase()
       .from('documents')
@@ -917,6 +961,7 @@ export const docDb = {
       description: doc.description,
       authorId: doc.author_id,
       authorName: authors.get(doc.author_id)?.name || '',
+      ...readDocumentApprovalMeta(doc.data_snapshot),
       dataSnapshot: doc.data_snapshot,
       status: doc.status,
       tags: safeJsonParse(doc.tags, []),
@@ -934,7 +979,7 @@ export const docDb = {
     const { data: docs, error, count } = await getSupabase()
       .from('documents')
       .select('id, title, description, author_id, data_snapshot, status, tags, created_at, updated_at', { count: 'exact' })
-      .in('status', ['completed', 'approved']) // public documents only
+      .eq('status', 'approved') // approved documents are visible to all users
       .order('updated_at', { ascending: false })
       .range(from, to);
 
@@ -956,6 +1001,7 @@ export const docDb = {
       description: doc.description,
       authorId: doc.author_id,
       authorName: authors.get(doc.author_id)?.name || '',
+      ...readDocumentApprovalMeta(doc.data_snapshot),
       dataSnapshot: doc.data_snapshot,
       status: doc.status,
       tags: safeJsonParse(doc.tags, []),
@@ -970,7 +1016,7 @@ export const docDb = {
   async findById(id: string) {
     const { data: doc, error } = await getSupabase()
       .from('documents')
-      .select('id, title, author_id')
+      .select('id, title, author_id, data_snapshot, status')
       .eq('id', id)
       .maybeSingle();
 
@@ -978,7 +1024,14 @@ export const docDb = {
     if (!doc) return null;
 
     const author = await userDb.findById(doc.author_id);
-    return { id: doc.id, title: doc.title, authorId: doc.author_id, authorName: author?.name || '' };
+    return {
+      id: doc.id,
+      title: doc.title,
+      authorId: doc.author_id,
+      authorName: author?.name || '',
+      dataSnapshot: doc.data_snapshot,
+      status: doc.status,
+    };
   },
 
   async getByAuthor(authorId: string, viewerId?: string) {
@@ -1006,6 +1059,7 @@ export const docDb = {
       description: doc.description,
       authorId: doc.author_id,
       authorName: author?.name || '',
+      ...readDocumentApprovalMeta(doc.data_snapshot),
       dataSnapshot: doc.data_snapshot,
       status: doc.status,
       tags: safeJsonParse(doc.tags, []),
