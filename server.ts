@@ -125,13 +125,14 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.' },
-    skip: (req) => req.method === 'GET', // GET requests are read-only; skip to avoid blocking feeds
+    skip: (req) => process.env.NODE_ENV === 'test' || req.method === 'GET', // GET requests are read-only; skip to avoid blocking feeds
   });
 
   // Stricter limiter for auth mutations (login/register) — 20 per minute per IP
   const authRateLimit = rateLimit({
     windowMs: 60 * 1000,
     max: 20,
+    skip: () => process.env.NODE_ENV === 'test',
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau.' },

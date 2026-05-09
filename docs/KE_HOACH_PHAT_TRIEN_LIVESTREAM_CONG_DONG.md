@@ -2,63 +2,54 @@
 
 ## 1. Mục tiêu
 
-Thêm chức năng livestream vào module Cộng đồng để người dùng có thể phát trực tiếp video, các role khác vào xem live và tương tác bằng chat/bình luận realtime. Giai đoạn đầu chưa cần lưu bản ghi/replay trên website sau khi live kết thúc.
+Thêm chức năng livestream vào module Cộng đồng để user có thể gửi yêu cầu phát live, admin duyệt và vào phòng live, hai phía trao đổi video/audio realtime, kèm chat và điều khiển kết thúc live. Giai đoạn đầu chưa cần lưu replay trên website.
 
-Chức năng này nên ưu tiên ổn định, dễ kiểm soát quyền truy cập và không làm nặng server hiện tại. Server `website-electricity` không nên tự xử lý luồng video thời gian thực vì livestream cần hạ tầng media riêng như ingest, WebRTC/HLS và phân phối tới người xem. Recording/replay để ở giai đoạn sau.
+Hiện tại cách triển khai thực tế là P2P WebRTC trực tiếp giữa user và admin, có lớp signaling bằng API nội bộ để đồng bộ offer/answer/ICE candidates. Cách này giữ được phạm vi nhỏ, dễ test và phù hợp với MVP hơn so với việc đưa thêm provider livestream riêng ngay từ đầu.
 
 ## 2. Phạm vi đề xuất
 
-Giai đoạn đầu nên hỗ trợ:
+Giai đoạn đầu đang hỗ trợ:
 
-- User đã đăng nhập có thể tạo phiên live.
-- Admin có thể bật/tắt quyền livestream cho user hoặc tắt live vi phạm.
-- Người xem thấy danh sách live đang diễn ra trong tab Cộng đồng.
-- Người xem có thể mở live, xem số người đang xem, chat/bình luận realtime.
-- Người phát bắt buộc phải đặt tên phiên live trước khi được phát.
-- Sau khi user tắt live, website không giữ video/replay. Nếu có file ghi tạm để tải xuống thì phải xóa khỏi dữ liệu website sau khi người dùng chọn tải hoặc hết thời gian chờ.
-- Hiển thị thông báo cho người đang xem live có muốn lưu video về máy cá nhân/điện thoại hay không.
-- Nếu người dùng chọn `Lưu`, trình duyệt tải file video xuống máy cá nhân với tên file lấy từ tên user phát live và tên phiên live.
-- Nếu người dùng không chọn lưu, video không được giữ lại trên dữ liệu website.
+- User đã đăng nhập có thể gửi yêu cầu live.
+- Admin thấy danh sách yêu cầu chờ duyệt và vào live từ đó.
+- User và admin vào cùng một room sau khi duyệt.
+- Người phát bắt buộc phải đặt tên phiên live trước khi gửi yêu cầu.
+- Hai phía có video/audio realtime và chat trong phòng live.
+- Có nút xác nhận trước khi kết thúc live.
 
-Chưa nên làm ngay ở giai đoạn đầu:
+Chưa làm trong giai đoạn hiện tại:
 
 - Livestream nhiều khách mời.
 - Phát màn hình.
 - Donation/paid live.
-- Moderation AI video realtime.
 - Replay công khai trên website.
-- Storage video dài hạn hoặc retention 30 ngày.
+- Lưu video dài hạn hoặc recording tạm để tải xuống.
 
 ## 3. Hướng kiến trúc
 
-### Khuyến nghị
+### Triển khai hiện tại
 
-Dùng `LiveKit self-host` trước để giảm chi phí provider và phù hợp giai đoạn đầu chưa cần recording. Backend vẫn nên bọc qua abstraction `livestreamProvider` để sau này đổi provider nếu cần.
+Livestream đang chạy theo mô hình P2P WebRTC trực tiếp giữa user và admin. API backend chỉ làm signaling, phân quyền, đồng bộ trạng thái và chat.
 
-Các lựa chọn provider:
+Các thành phần chính:
 
-- LiveKit self-host
-- Cloudflare Stream Live
-- Mux Live Streaming
-- AWS IVS
-
-Trong bối cảnh yêu cầu hiện tại là ưu tiên miễn phí và chưa cần storage recording 30 ngày, lựa chọn thực tế nhất là LiveKit self-host. App hiện tại chỉ cần lưu metadata trong Supabase/Postgres và gọi service provider từ backend.
+- Frontend room UI và video element trong `src/components/livestream`.
+- Hook `useP2PLivestream` điều phối open camera, create offer/answer, poll candidates, heartbeat và reconnect.
+- Express backend `src/api/livestreamRoutes.ts` cho môi trường local.
+- Worker backend `src/worker/routes/livestream.ts` cho môi trường Cloudflare/Supabase.
 
 ### Luồng tổng thể
 
-1. User bấm `Bắt đầu live` trong Cộng đồng.
-2. Frontend gọi backend: `POST /api/livestreams`.
-3. Backend kiểm tra quyền user, tạo live input/session với provider.
-4. Backend lưu metadata phiên live vào bảng `livestreams` với trạng thái `scheduled/live`.
-5. Frontend nhận `streamKey`, `ingestUrl`, `playbackUrl`.
-6. User phát video bằng WebRTC/RTMP tùy provider và client implementation.
-7. Người xem mở `playbackUrl` để xem.
-8. Chat realtime dùng Supabase Realtime hoặc route hiện có của social.
-9. Khi user tắt live, frontend/backend gọi `POST /api/livestreams/:id/end`.
-10. Backend cập nhật trạng thái `ended` và lưu thời gian kết thúc.
-11. Frontend hiển thị thông báo `Bạn có muốn lưu video live này về máy không?` cho người đang xem live.
-12. Nếu chọn `Lưu`, trình duyệt tải video xuống máy cá nhân/điện thoại. Tên file dùng format `ten-user-phat-live_ten-phien-live_yyyyMMdd-HHmm.webm`.
-13. Nếu có recording tạm phía provider/server để phục vụ tải xuống, backend phải xóa file tạm ngay sau khi tải xong hoặc sau thời gian chờ ngắn.
+1. User nhập tên phiên live và gửi yêu cầu.
+2. Frontend gọi `POST /api/livestreams`.
+3. Backend tạo session với trạng thái `pending`.
+4. Admin thấy session trong danh sách chờ duyệt và bấm duyệt.
+5. Backend chuyển session sang `live` và gán admin vào phiên.
+6. User tạo offer, admin trả answer, hai phía trao đổi ICE candidates.
+7. Cả hai phía mở camera/microphone và hiển thị status kết nối.
+8. Chat realtime chạy cùng phiên live.
+9. Khi kết thúc, admin hoặc user có quyền bấm end live.
+10. Backend chuyển session sang `ended`, frontend dọn room và quay về trạng thái idle.
 
 ## 4. Lưu trữ sau khi tắt live
 
@@ -93,25 +84,16 @@ Nội dung lưu:
 
 ### Video live đang phát lưu ở đâu?
 
-Trong lúc live, video không lưu trong server Node hiện tại. Luồng video đi trực tiếp tới provider livestream. Provider chịu trách nhiệm ingest, transcode và phân phối tới người xem.
+Trong lúc live, video không lưu trong server Node hiện tại. Luồng media đi trực tiếp giữa user và admin qua WebRTC, còn backend chỉ làm signaling và đồng bộ trạng thái.
 
 ### Bản ghi sau live lưu ở đâu?
 
-Giai đoạn đầu không lưu replay trên website. Có 2 hướng xử lý phần `Lưu video về máy`:
+Giai đoạn hiện tại không lưu replay trên website. Không có `MediaRecorder` hay recording tạm ở server.
 
-Phương án khuyến nghị cho MVP: ghi cục bộ trên trình duyệt bằng `MediaRecorder`.
+Nếu sau này cần xuất video tải xuống hoặc replay, mới cân nhắc một trong hai hướng:
 
-- Website không lưu video trên server.
-- Người xem/người phát chỉ tải được phần video mà trình duyệt của họ đã nhận và ghi lại trong phiên đang xem.
-- Nếu người xem vào muộn, file tải xuống chỉ có đoạn từ lúc họ bắt đầu xem, không phải toàn bộ buổi live.
-- Phù hợp nhất với yêu cầu không lưu video trên dữ liệu website.
-
-Phương án nếu bắt buộc tải toàn bộ buổi live: tạo recording tạm ở provider/server.
-
-- Website/provider phải giữ file tạm trong thời gian rất ngắn sau khi live kết thúc.
-- Khi người dùng chọn `Lưu`, backend trả link tải tạm.
-- Sau khi tải xong hoặc hết thời gian chờ, backend xóa file tạm vĩnh viễn.
-- Phương án này đúng nhu cầu tải đủ buổi live hơn, nhưng vẫn là một dạng lưu tạm nên phức tạp và có chi phí hơn.
+- Ghi cục bộ trên trình duyệt bằng `MediaRecorder`.
+- Recording tạm ở provider/server rồi xóa sau khi tải xong.
 
 Phần dưới là phương án để dành khi sau này cần replay/xem lại live trên website.
 
@@ -141,7 +123,7 @@ Phương án B: export recording về Cloudflare R2.
 - User có thể xóa recording của chính mình.
 - Admin có thể xóa bất kỳ recording nào.
 
-Lý do chưa làm storage recording ngay: LiveKit self-host giai đoạn đầu nên tập trung vào phát realtime trước để giảm chi phí và độ phức tạp. Khi cần xem lại, mốc 30 ngày là cấu hình hợp lý vì video tốn dung lượng và chi phí cao hơn text/image.
+Lý do chưa làm storage recording ngay: bản P2P hiện tại ưu tiên signaling và trải nghiệm realtime trước; ghi/replay sẽ làm tăng độ phức tạp và chưa cần cho MVP.
 
 Có thể cấu hình qua env:
 
@@ -203,30 +185,46 @@ create table livestream_messages (
 
 Có thể tái sử dụng hệ thống comment hiện tại, nhưng bảng riêng giúp dễ cleanup và realtime theo phòng live.
 
-## 6. API đề xuất
+## 6. API đang dùng
 
 ### Livestream
 
 - `POST /api/livestreams`
-  - Tạo live session.
+  - Tạo live session ở trạng thái `pending`.
   - Chỉ user đã đăng nhập.
-  - Bắt buộc có `title`; không cho bắt đầu live nếu title rỗng.
-  - Trả về `id`, `ingestUrl`, `streamKey`, `playbackUrl`.
+  - Bắt buộc có `title`.
 
 - `GET /api/livestreams/live`
-  - Danh sách livestream đang live.
+  - Danh sách session đang chờ duyệt hoặc đang live, theo quyền của user.
 
 - `GET /api/livestreams/:id`
-  - Chi tiết live. Replay chỉ trả khi giai đoạn sau bật recording.
-  - Nếu requester là owner/admin thì trả thêm thông tin quản trị.
+  - Chi tiết live.
+  - Nếu requester là owner/admin thì trả thêm thông tin phiên.
 
-- `POST /api/livestreams/:id/start`
-  - Cập nhật trạng thái live nếu provider callback không có.
+- `POST /api/livestreams/:id/approve`
+  - Admin duyệt và vào phiên live.
+
+- `POST /api/livestreams/:id/heartbeat`
+  - Cập nhật trạng thái còn online của host/admin.
+
+- `POST /api/livestreams/:id/reconnect`
+  - Yêu cầu đàm phán lại khi một phía vào lại phòng.
+
+- `POST /api/livestreams/:id/offer`
+  - Host gửi offer WebRTC.
+
+- `GET /api/livestreams/:id/offer`
+  - Admin lấy offer để trả lời.
+
+- `POST /api/livestreams/:id/answer`
+  - Admin gửi answer WebRTC.
+
+- `GET /api/livestreams/:id/answer`
+  - Host lấy answer WebRTC.
 
 - `POST /api/livestreams/:id/end`
   - Kết thúc live.
-  - Chỉ owner/admin.
-  - Trả về trạng thái có thể tải video hay không, tùy phương án recording cục bộ hoặc recording tạm.
+  - Chỉ user trong phòng live hoặc admin.
 
 - `GET /api/livestreams/:id/download`
   - Chỉ dùng nếu có recording tạm phía provider/server.
@@ -240,15 +238,12 @@ Có thể tái sử dụng hệ thống comment hiện tại, nhưng bảng riê
 
 - `GET /api/livestreams/:id/messages`
 - `POST /api/livestreams/:id/messages`
-- `DELETE /api/livestreams/:id/messages/:messageId`
 
-Realtime có thể dùng Supabase Realtime trên bảng `livestream_messages`.
+Realtime chat hiện chạy bằng polling API trong hook client.
 
 ### Provider callback
 
-- `POST /api/livestreams/provider/webhook`
-  - Nhận event từ provider: stream started, stream ended, error. Event `recording ready` chỉ cần khi bật recording sau này.
-  - Cần verify signature.
+Chưa áp dụng ở giai đoạn hiện tại.
 
 ## 7. UI/UX trong Cộng đồng
 
@@ -256,42 +251,41 @@ Realtime có thể dùng Supabase Realtime trên bảng `livestream_messages`.
 
 Thêm một dải/live section phía trên feed:
 
-- `Đang live`
-- Card live gồm avatar, tên user, tiêu đề, số người xem, thời lượng.
-- Nút `Bắt đầu live` cạnh `Đăng bài`.
+- Danh sách yêu cầu live chờ duyệt cho admin.
+- Danh sách phiên đang live cho user/admin.
+- Card live gồm avatar, tên user, tiêu đề, trạng thái và nút duyệt/kết thúc tương ứng.
+
+### Trạng thái hiện tại
+
+- Phòng live P2P đã hoạt động trong UI.
+- Test Playwright real-UX đã có và đang pass.
+- Ghi replay/lưu video về máy chưa triển khai trong bản hiện tại.
 
 ### Màn tạo live
 
-Form tối thiểu:
+Form hiện tại tối thiểu:
 
 - Tiêu đề live.
-- Tiêu đề live là bắt buộc. Nếu bỏ trống thì disable nút `Bắt đầu live`.
-- Mô tả.
-- Quyền xem: công khai trong Cộng đồng.
-- Bật/tắt chat.
-- Chưa cần tùy chọn lưu bản ghi ở giai đoạn đầu.
+- Tiêu đề live là bắt buộc. Nếu bỏ trống thì disable nút gửi yêu cầu.
+- Chưa có mô tả, quyền riêng tư hay tùy chọn lưu bản ghi.
 
-### Màn live studio
+### Màn phòng live
 
-- Preview camera/micro.
-- Nút bắt đầu/kết thúc.
-- Trạng thái kết nối.
-- Chat realtime bên phải.
-- Số người xem.
+- Hai khung video: remote và local.
+- Trạng thái kết nối WebRTC.
+- Chat realtime.
+- Nút đổi camera trước/sau trên mobile.
+- Nút xác nhận trước khi kết thúc live.
 
 ### Màn xem live
 
-- Player video.
-- Chat realtime.
-- Thông tin người phát.
-- Nút báo cáo vi phạm.
-- Khi live kết thúc, hiển thị dialog hỏi `Bạn có muốn lưu video live này về máy không?`.
-- Nút `Lưu` tải file về máy cá nhân/điện thoại nếu trình duyệt hoặc recording tạm hỗ trợ.
-- Nút `Không lưu` đóng dialog và không giữ video trên dữ liệu website.
+- Hiện không có replay download dialog.
+- Màn live chính là room dùng chung cho host và admin.
+- Chat và trạng thái kết nối hiển thị ngay trong room.
 
 ### Tên file tải xuống
 
-Tên file lấy từ tên user phát live và tên phiên live đã đặt trước đó:
+Phần đặt tên file tải xuống chỉ áp dụng nếu sau này bật recording hoặc MediaRecorder:
 
 ```text
 {ten-user-phat-live}_{ten-phien-live}_{yyyyMMdd-HHmm}.webm
@@ -354,27 +348,12 @@ Yêu cầu bắt buộc:
 
 Các file/khu vực sẽ cần thêm hoặc sửa:
 
-- `src/pages/SocialPage.tsx`: thêm UI live section, nút bắt đầu live, card live đang diễn ra.
-- `src/store/useSocialStore.ts`: thêm state/actions cho livestream.
-- `src/api/livestreamRoutes.ts`: route backend mới.
-- `database.ts`: thêm `livestreamDb`, `livestreamMessageDb`.
-- `server.ts`: mount route `/api/livestreams`.
-- `src/utils/api.ts`: dùng lại client hiện có.
-- `docs/TAI_LIEU_CSDL.md`: cập nhật schema sau khi triển khai.
-
-Nếu dùng LiveKit self-host giai đoạn đầu:
-
-- Thêm service backend: `src/services/livestreamProvider.ts`.
-- Thêm env provider:
-
-```env
-LIVESTREAM_PROVIDER=livekit_self_host
-LIVEKIT_URL=
-LIVEKIT_API_KEY=
-LIVEKIT_API_SECRET=
-```
-
-Nếu sau này dùng Cloudflare Stream/Mux thì service `livestreamProvider` sẽ đổi implementation, không đổi UI/API chính.
+- `src/components/livestream/*`: room UI, modal xác nhận, session list, hook và API client.
+- `src/api/livestreamRoutes.ts`: route backend local.
+- `src/worker/routes/livestream.ts`: route backend cho Worker/Supabase.
+- `src/worker/index.ts`: mount route `/api/livestreams`.
+- `server.ts`: giữ rate limit phù hợp khi test.
+- `tests/livestream.spec.ts`: kiểm tra luồng real-UX.
 
 ## 11. Kế hoạch triển khai theo giai đoạn
 

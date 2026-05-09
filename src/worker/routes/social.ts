@@ -205,26 +205,26 @@ export async function handleSocial(request: Request, env: Env, pathname: string)
   const { supabase, user } = auth;
 
   if (request.method === 'GET' && pathname === '/api/social/notifications/unread-count') {
-    const { count, error } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false);
+    const { count, error } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false).neq('type', 'livestream_session');
     if (error) return json({ count: 0 });
     return json({ count: count ?? 0 });
   }
 
   if (request.method === 'GET' && pathname === '/api/social/notifications') {
-    const { data, error } = await supabase.from('notifications').select('id, user_id, actor_id, type, entity_type, entity_id, data_json, is_read, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await supabase.from('notifications').select('id, user_id, actor_id, type, entity_type, entity_id, data_json, is_read, created_at').eq('user_id', user.id).neq('type', 'livestream_session').order('created_at', { ascending: false }).limit(50);
     if (error) return json([]);
     return json(await formatNotifications(supabase, data || []));
   }
 
   if (request.method === 'POST' && pathname === '/api/social/notifications/read-all') {
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false).neq('type', 'livestream_session');
     return json({ message: 'Đã đánh dấu tất cả thông báo là đã đọc', count: 0 });
   }
 
   const readMatch = pathname.match(/^\/api\/social\/notifications\/([^/]+)\/read$/);
   if (request.method === 'POST' && readMatch) {
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('id', readMatch[1]);
-    const { count } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false);
+    const { count } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false).neq('type', 'livestream_session');
     return json({ message: 'Đã đánh dấu đã đọc', count: count ?? 0 });
   }
 

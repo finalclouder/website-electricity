@@ -13,6 +13,9 @@ export type Env = {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string;
   R2_PUBLIC_URL?: string;
+  LIVESTREAM_TURN_URLS?: string;
+  LIVESTREAM_TURN_USERNAME?: string;
+  LIVESTREAM_TURN_CREDENTIAL?: string;
 };
 
 export type UserRow = {
