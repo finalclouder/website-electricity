@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useSocialStore, SocialPost } from '../store/useSocialStore';
 import { useNavigationStore } from '../store/useNavigationStore';
 import { parseAppDate, timeAgo } from '../utils/date';
+import { P2PLivestreamPanel } from '../components/livestream/P2PLivestreamPanel';
 
 const CATEGORIES = [
   { value: 'general', label: 'Chung', icon: Lightbulb, color: 'blue' },
@@ -732,6 +733,8 @@ export const SocialPage: React.FC<{ onViewProfile?: (userId: string) => void }> 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
+      <P2PLivestreamPanel />
+
       {/* Create post */}
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-3 sm:p-4 mb-4 sm:mb-6">
         <div className="flex gap-2 sm:gap-3 mb-3">

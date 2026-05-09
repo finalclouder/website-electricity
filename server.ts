@@ -75,6 +75,7 @@ import authRoutes from './src/api/authRoutes.js';
 import socialRoutes from './src/api/socialRoutes.js';
 import socialGraphRoutes from './src/api/socialGraphRoutes.js';
 import documentRoutes from './src/api/documentRoutes.js';
+import livestreamRoutes from './src/api/livestreamRoutes.js';
 import landingRoutes from './src/api/landingRoutes.js';
 import { authMiddleware } from './src/api/authMiddleware.js';
 import { uploadsRoot } from './src/api/landingRoutes.js';
@@ -169,6 +170,7 @@ async function startServer() {
   app.use('/api/posts', apiRateLimit, socialRoutes);
   app.use('/api/social', apiRateLimit, socialGraphRoutes);
   app.use('/api/documents', apiRateLimit, documentRoutes);
+  app.use('/api/livestreams', apiRateLimit, livestreamRoutes);
   app.use('/api/landing', landingRoutes);
   app.use('/uploads', express.static(uploadsRoot));
 

@@ -493,3 +493,68 @@ Khuyến nghị theo yêu cầu hiện tại:
 - Nếu muốn miễn phí tối đa: thử nghiệm LiveKit self-host trước, chỉ làm live realtime và chat realtime.
 - Nếu sau này muốn ổn định, ít vận hành, có recording và CDN tốt: dùng Cloudflare Stream Live hoặc Mux dù có phí.
 - Với hệ thống hiện tại, nên thiết kế abstraction `livestreamProvider` để sau này có thể đổi giữa `livekit_self_host`, `cloudflare_stream`, `mux` mà không phải viết lại UI/API.
+
+## 15. Kế hoạch MVP mới: WebRTC P2P 1 người phát - 1 người xem
+
+Do yêu cầu hiện tại chỉ cần 1 người phát và 1 người xem, giai đoạn test thực tế sẽ chưa dùng LiveKit.
+
+### Nguyên tắc không phá logic hiện có
+
+- Không sửa luồng đăng bài, bình luận, tài liệu, xét duyệt tài liệu.
+- Không thêm bảng database ở giai đoạn MVP P2P.
+- Không thêm dependency WebSocket nếu chưa cần.
+- Tạo route riêng `/api/livestreams` để signaling.
+- Tạo component UI riêng trong Cộng đồng, chỉ nhúng vào `SocialPage`.
+- Signaling lưu trong bộ nhớ server, tự mất khi restart server.
+- Video không đi qua server website và không lưu vào database.
+
+### Backend signaling
+
+Thêm file `src/api/livestreamRoutes.ts`.
+
+API tối thiểu:
+
+- `POST /api/livestreams`: tạo phiên live, bắt buộc `title`.
+- `GET /api/livestreams/live`: lấy phiên live đang mở.
+- `GET /api/livestreams/:id`: lấy trạng thái phiên live.
+- `POST /api/livestreams/:id/offer`: host gửi WebRTC offer.
+- `GET /api/livestreams/:id/offer`: viewer lấy offer.
+- `POST /api/livestreams/:id/answer`: viewer gửi answer.
+- `GET /api/livestreams/:id/answer`: host lấy answer.
+- `POST /api/livestreams/:id/candidates`: host/viewer gửi ICE candidate.
+- `GET /api/livestreams/:id/candidates`: host/viewer lấy candidate phía còn lại.
+- `POST /api/livestreams/:id/end`: host/admin kết thúc live.
+
+Giới hạn MVP:
+
+- Mỗi phiên chỉ có 1 viewer.
+- Mỗi user chỉ có 1 phiên live đang chạy.
+- Dùng STUN public để test.
+- Nếu mạng NAT khó thì kết nối có thể thất bại; khi đó mới cần TURN/LiveKit.
+
+### Frontend
+
+Thêm component `src/components/livestream/P2PLivestreamPanel.tsx`.
+
+Chức năng:
+
+- Hiển thị danh sách `Đang live` trong tab Cộng đồng.
+- Nút `Bắt đầu live`.
+- Bắt buộc nhập tên phiên live.
+- Host xem preview camera/mic và phát live.
+- Viewer bấm `Xem live` để kết nối.
+- Khi live kết thúc, hiện dialog hỏi có muốn lưu video về máy không.
+- Nếu chọn `Lưu`, tải file `.webm` từ dữ liệu `MediaRecorder` cục bộ của trình duyệt.
+- Tên file: `{ten-user-phat-live}_{ten-phien-live}_{yyyyMMdd-HHmm}.webm`.
+
+### Test thực tế
+
+- Chạy `npm run lint`.
+- Chạy `npm run build`.
+- Chạy dev server.
+- Test 2 phiên trình duyệt:
+  - Admin/user A đăng nhập và bắt đầu live.
+  - User B đăng nhập, thấy phiên live và bấm xem.
+  - Kiểm tra video remote hiển thị.
+  - Kết thúc live.
+  - Kiểm tra dialog lưu video và tên file tải xuống.
