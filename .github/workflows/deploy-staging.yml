@@ -10,11 +10,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      SERVER_HOST: ${{ secrets.STAGING_SERVER_HOST }}
-      SERVER_PORT: ${{ secrets.STAGING_SERVER_PORT }}
-      SERVER_USER: ${{ secrets.STAGING_SERVER_USER }}
-      SERVER_PASSWORD: ${{ secrets.STAGING_SERVER_PASSWORD }}
-      APP_PORT: ${{ secrets.STAGING_APP_PORT }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      STAGING_DOMAIN: staging.livelinepcbn.com
+      STAGING_WORKER_NAME: website-electricity-staging
 
     steps:
       - name: Checkout repository
@@ -32,55 +31,15 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Validate deploy secrets
+      - name: Validate staging secrets
         run: |
-          test -n "$SERVER_HOST"
-          test -n "$SERVER_PORT"
-          test -n "$SERVER_USER"
-          test -n "$SERVER_PASSWORD"
-          test -n "$APP_PORT"
-          if [ "$SERVER_PORT" != "2122" ]; then
-            echo "SERVER_PORT must be 2122"
-            exit 1
-          fi
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
 
-      - name: Create deployment archive
+      - name: Deploy staging Worker
         run: |
-          tar -czf deploy.tar.gz \
-            package.json \
-            package-lock.json \
-            tsconfig.json \
-            server.ts \
-            database.ts \
-            vite.config.ts \
-            index.html \
-            public \
-            src
-
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      - name: Copy archive to server
-        run: |
-          sshpass -p "$SERVER_PASSWORD" scp \
-            -P "$SERVER_PORT" \
-            -o StrictHostKeyChecking=no \
-            deploy.tar.gz \
-            "$SERVER_USER@$SERVER_HOST:/home/tien/"
-
-      - name: Deploy on staging server
-        run: |
-          STAGING_PORT="$APP_PORT"
-          sshpass -p "$SERVER_PASSWORD" ssh \
-            -p "$SERVER_PORT" \
-            -o StrictHostKeyChecking=no \
-            "$SERVER_USER@$SERVER_HOST" <<EOF
-          set -e
-          mkdir -p /home/tien/website-staging
-          tar -xzf /home/tien/deploy.tar.gz -C /home/tien/website-staging
-          cd /home/tien/website-staging
-          npm install
-          npm run build
-          export PORT="$STAGING_PORT"
-          pm2 restart patctc-staging --update-env || pm2 start npm --name patctc-staging -- start
-          EOF
+          npx wrangler deploy \
+            --keep-vars \
+            --name "$STAGING_WORKER_NAME" \
+            --domain "$STAGING_DOMAIN" \
+            --message "Deploy staging from ${GITHUB_SHA}"
