@@ -34,7 +34,20 @@ export const Accordion: React.FC<AccordionProps> = ({ title, children, isOpen, o
 
   // When user focuses any input/textarea inside this accordion,
   // notify parent so Preview panel can auto-scroll to the corresponding page.
-  const handleFocusCapture = onInputFocus;
+  const handleFocusCapture = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    if (!onInputFocus) return;
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const shouldSyncPreview =
+      target.matches('input, textarea, select') ||
+      target.isContentEditable;
+
+    if (shouldSyncPreview) {
+      onInputFocus();
+    }
+  }, [onInputFocus]);
 
   return (
     <div
