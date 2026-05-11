@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { PATCTCData, WorkType, RiskItem, Personnel, ConstructionSequence, BocCachDienBlock, DieuKhienGauBlock, ThaoBocCachDienBlock, SequenceActionBlock } from '../types';
+import { PATCTCData, WorkType, RiskItem, Personnel, ConstructionSequence, BocCachDienBlock, DieuKhienGauBlock, ThaoBocCachDienBlock, SequenceActionBlock, SequenceActionType } from '../types';
 import { WORK_TYPES, PERSONNEL_MASTER, TOOLS_MASTER } from '../constants';
 import { cleanJobItem, ensureBulletFormat, ensureLocation, formatJobItem } from '../utils/patctcFormat';
 
@@ -32,11 +32,22 @@ function cloneActionBlocks(sequence?: Partial<ConstructionSequence> | null): Seq
   return legacyBlocks.length > 0 ? legacyBlocks : undefined;
 }
 
+function createSequenceActionBlock(type: SequenceActionType): SequenceActionBlock {
+  return {
+    id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    viTri: '',
+    trinhTu: '',
+    deLamGi: '',
+    thucHien: ''
+  };
+}
+
 function cloneSequence(sequence?: Partial<ConstructionSequence> | null): ConstructionSequence {
   const actionBlocks = cloneActionBlocks(sequence);
   return {
     eyeCheckText: sequence?.eyeCheckText,
-    guongKiemTra: sequence?.guongKiemTra || '',
+    guongKiemTra: sequence?.guongKiemTra,
     bocCachDienBlocks: cloneBocCachDienBlocks(sequence?.bocCachDienBlocks),
     dieuKhienGauBlocks: cloneDieuKhienGauBlocks(sequence?.dieuKhienGauBlocks),
     thaoBocCachDienBlocks: cloneThaoBocCachDienBlocks(sequence?.thaoBocCachDienBlocks),
@@ -50,7 +61,8 @@ function getRootSequence(data: PATCTCData): ConstructionSequence {
     guongKiemTra: data.guongKiemTra,
     bocCachDienBlocks: data.bocCachDienBlocks,
     dieuKhienGauBlocks: data.dieuKhienGauBlocks,
-    thaoBocCachDienBlocks: data.thaoBocCachDienBlocks
+    thaoBocCachDienBlocks: data.thaoBocCachDienBlocks,
+    actionBlocks: data.actionBlocks
   });
 }
 
@@ -265,6 +277,7 @@ function derivePatctcData(
       bocCachDienBlocks: cloneBocCachDienBlocks(sourceSequence.bocCachDienBlocks),
       dieuKhienGauBlocks: cloneDieuKhienGauBlocks(sourceSequence.dieuKhienGauBlocks),
       thaoBocCachDienBlocks: cloneThaoBocCachDienBlocks(sourceSequence.thaoBocCachDienBlocks),
+      actionBlocks: cloneActionBlocks(sourceSequence),
       sequences: {
         1: cloneSequence(sourceSequence)
       }
@@ -376,6 +389,7 @@ const INITIAL_DATA: PATCTCData = {
   bocCachDienBlocks: [],
   dieuKhienGauBlocks: [],
   thaoBocCachDienBlocks: [],
+  actionBlocks: [],
   sequences: {
     1: { guongKiemTra: 'chuỗi sứ, khóa máng', bocCachDienBlocks: [], dieuKhienGauBlocks: [], thaoBocCachDienBlocks: [] },
     2: { eyeCheckText: '', guongKiemTra: '', bocCachDienBlocks: [], dieuKhienGauBlocks: [], thaoBocCachDienBlocks: [] }
@@ -459,6 +473,7 @@ interface AppState {
   addBocCachDien: (jobIdx: number) => void;
   addDieuKhienGau: (jobIdx: number) => void;
   addThaoBocCachDien: (jobIdx: number) => void;
+  insertSequenceActionBlock: (jobIdx: number, type: SequenceActionType, afterId?: string) => string | undefined;
   addCanCuBoSung: () => void;
   removeCanCuBoSung: (idx: number) => void;
   validateData: () => boolean;
@@ -851,6 +866,37 @@ export const useStore = create<AppState>()(
           }
         };
       }),
+
+      insertSequenceActionBlock: (jobIdx, type, afterId) => {
+        const state = get();
+        const seqKey = jobIdx as keyof typeof state.data.sequences;
+        const seq = state.data.sequences?.[seqKey];
+        if (!seq) return undefined;
+
+        const currentBlocks = cloneActionBlocks(seq) || [];
+        const newBlock = createSequenceActionBlock(type);
+        const insertAt = afterId ? currentBlocks.findIndex((block) => block.id === afterId) : -1;
+        const nextBlocks = insertAt >= 0
+          ? [...currentBlocks.slice(0, insertAt + 1), newBlock, ...currentBlocks.slice(insertAt + 1)]
+          : [...currentBlocks, newBlock];
+        const nextSequence = {
+          ...seq,
+          actionBlocks: nextBlocks
+        };
+
+        set({
+          data: {
+            ...state.data,
+            ...(state.data.jobItems.length === 1 ? { actionBlocks: nextBlocks } : {}),
+            sequences: {
+              ...state.data.sequences,
+              [jobIdx]: nextSequence
+            }
+          }
+        });
+
+        return newBlock.id;
+      },
 
       addCanCuBoSung: () => set(state => ({
         data: {

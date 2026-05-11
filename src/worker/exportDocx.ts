@@ -606,8 +606,9 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
 
                 allSteps.push("Hai công nhân leo lên gàu đã đeo găng tay và vai áo cao su cách điện và mang theo các dụng cụ, trang bị bảo vệ cá nhân cần thiết, móc dây an toàn chắc chắn.");
                 if (!isHM2) {
-                  const guongText = seqData.guongKiemTra
-                    ? ` kiểm tra các vị trí, ${seqData.guongKiemTra}, xem có gì bất thường không.`
+                  const guongKiemTraText = (seqData.guongKiemTra || '').trim();
+                  const guongText = guongKiemTraText
+                    ? ` kiểm tra các vị trí, ${guongKiemTraText}, xem có gì bất thường không.`
                     : " kiểm tra các vị trí.";
                   allSteps.push(`Điều khiển gầu đến vị trí phù hợp dùng gương lắp vào sào cách điện${guongText}`);
                 } else if (seqData.eyeCheckText && seqData.eyeCheckText.trim() !== "") {

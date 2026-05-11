@@ -95,7 +95,7 @@ export interface SequenceActionBlock {
 
 export interface ConstructionSequence {
   eyeCheckText?: string;
-  guongKiemTra: string;
+  guongKiemTra?: string;
   bocCachDienBlocks: BocCachDienBlock[];
   dieuKhienGauBlocks: DieuKhienGauBlock[];
   thaoBocCachDienBlocks: ThaoBocCachDienBlock[];
@@ -183,6 +183,7 @@ export interface PATCTCData {
   bocCachDienBlocks: BocCachDienBlock[];
   dieuKhienGauBlocks: DieuKhienGauBlock[];
   thaoBocCachDienBlocks: ThaoBocCachDienBlock[];
+  actionBlocks?: SequenceActionBlock[];
   sequences?: { [key: number]: ConstructionSequence };
 
   // Biện pháp an toàn chung + Lưu ý

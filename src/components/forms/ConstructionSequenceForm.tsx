@@ -5,7 +5,7 @@ import { Accordion, Input } from '../UI';
 import type { SequenceActionBlock, SequenceActionType } from '../../types';
 
 export const ConstructionSequenceForm: React.FC = () => {
-  const { data, updateData, activeSection, toggleSection, activeJobIdx, setActiveJobIdx, addBocCachDien, addDieuKhienGau, addThaoBocCachDien, scrollPreviewToSection } = useStore();
+  const { data, updateData, activeSection, toggleSection, activeJobIdx, setActiveJobIdx, scrollPreviewToSection } = useStore();
 
   const seq = data.sequences?.[activeJobIdx] || {
     guongKiemTra: '',
@@ -17,12 +17,34 @@ export const ConstructionSequenceForm: React.FC = () => {
 
   const isHM2 = data.jobItems.length > 1 && activeJobIdx === 2;
   const hasEyeCheck = seq.eyeCheckText !== undefined;
+  const [actionBlocksDraft, setActionBlocksDraft] = React.useState<SequenceActionBlock[]>(() => {
+    if (Array.isArray(seq.actionBlocks)) return seq.actionBlocks;
+    return [
+      ...seq.bocCachDienBlocks.map(block => ({ ...block, type: 'bocCachDien' as const })),
+      ...seq.dieuKhienGauBlocks.map(block => ({ ...block, type: 'dieuKhienGau' as const })),
+      ...seq.thaoBocCachDienBlocks.map(block => ({ ...block, type: 'thaoBocCachDien' as const }))
+    ];
+  });
+
+  React.useEffect(() => {
+    setActionBlocksDraft(
+      Array.isArray(seq.actionBlocks)
+        ? seq.actionBlocks
+        : [
+            ...seq.bocCachDienBlocks.map(block => ({ ...block, type: 'bocCachDien' as const })),
+            ...seq.dieuKhienGauBlocks.map(block => ({ ...block, type: 'dieuKhienGau' as const })),
+            ...seq.thaoBocCachDienBlocks.map(block => ({ ...block, type: 'thaoBocCachDien' as const }))
+          ]
+    );
+  }, [activeJobIdx, seq.actionBlocks, seq.bocCachDienBlocks, seq.dieuKhienGauBlocks, seq.thaoBocCachDienBlocks]);
 
   const updateSequence = (field: string, value: any) => {
-    const nextSequence = {
-      ...seq,
-      [field]: value
-    };
+    const nextSequence = { ...seq };
+    if (value === undefined) {
+      delete (nextSequence as Record<string, unknown>)[field];
+    } else {
+      (nextSequence as Record<string, unknown>)[field] = value;
+    }
 
     const updates: any = {
       sequences: {
@@ -50,16 +72,8 @@ export const ConstructionSequenceForm: React.FC = () => {
     updateSequence('thaoBocCachDienBlocks', seq.thaoBocCachDienBlocks.filter(b => b.id !== blockId));
   };
 
-  const getActionBlocks = (): SequenceActionBlock[] => {
-    if (Array.isArray(seq.actionBlocks)) return seq.actionBlocks;
-    return [
-      ...seq.bocCachDienBlocks.map(block => ({ ...block, type: 'bocCachDien' as const })),
-      ...seq.dieuKhienGauBlocks.map(block => ({ ...block, type: 'dieuKhienGau' as const })),
-      ...seq.thaoBocCachDienBlocks.map(block => ({ ...block, type: 'thaoBocCachDien' as const }))
-    ];
-  };
-
   const syncActionBlocks = (actionBlocks: SequenceActionBlock[]) => {
+    setActionBlocksDraft(actionBlocks);
     updateSequence('actionBlocks', actionBlocks);
   };
 
@@ -73,50 +87,70 @@ export const ConstructionSequenceForm: React.FC = () => {
   });
 
   const addActionBlock = (type: SequenceActionType, afterId?: string) => {
-    const blocks = getActionBlocks();
     const newBlock = createActionBlock(type);
     if (!afterId) {
-      syncActionBlocks([...blocks, newBlock]);
-      return;
+      syncActionBlocks([...actionBlocksDraft, newBlock]);
+      return newBlock.id;
     }
 
-    const index = blocks.findIndex(block => block.id === afterId);
+    const index = actionBlocksDraft.findIndex(block => block.id === afterId);
     if (index < 0) {
-      syncActionBlocks([...blocks, newBlock]);
-      return;
+      syncActionBlocks([...actionBlocksDraft, newBlock]);
+      return newBlock.id;
     }
 
     syncActionBlocks([
-      ...blocks.slice(0, index + 1),
+      ...actionBlocksDraft.slice(0, index + 1),
       newBlock,
-      ...blocks.slice(index + 1)
+      ...actionBlocksDraft.slice(index + 1)
     ]);
+    return newBlock.id;
   };
 
   const updateActionBlock = (id: string, updates: Partial<SequenceActionBlock>) => {
-    syncActionBlocks(getActionBlocks().map(block => block.id === id ? { ...block, ...updates } : block));
+    syncActionBlocks(actionBlocksDraft.map(block => block.id === id ? { ...block, ...updates } : block));
   };
 
   const removeActionBlock = (id: string) => {
-    syncActionBlocks(getActionBlocks().filter(block => block.id !== id));
+    syncActionBlocks(actionBlocksDraft.filter(block => block.id !== id));
+  };
+
+  const removeEyeCheck = () => {
+    updateSequence('eyeCheckText', undefined);
+  };
+
+  const removeGuongKiemTra = () => {
+    updateSequence('guongKiemTra', undefined);
   };
 
   const ActionButtons: React.FC<{ afterId?: string }> = ({ afterId }) => (
     <div className="grid grid-cols-3 gap-2">
       <button
-        onClick={() => addActionBlock('bocCachDien', afterId)}
+        type="button"
+        onClick={() => {
+          const newId = addActionBlock('bocCachDien', afterId);
+          if (newId) window.setTimeout(() => document.getElementById(`action-block-${newId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0);
+        }}
         className="py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={13} /> Bọc
       </button>
       <button
-        onClick={() => addActionBlock('dieuKhienGau', afterId)}
+        type="button"
+        onClick={() => {
+          const newId = addActionBlock('dieuKhienGau', afterId);
+          if (newId) window.setTimeout(() => document.getElementById(`action-block-${newId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0);
+        }}
         className="py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={13} /> ĐK gàu
       </button>
       <button
-        onClick={() => addActionBlock('thaoBocCachDien', afterId)}
+        type="button"
+        onClick={() => {
+          const newId = addActionBlock('thaoBocCachDien', afterId);
+          if (newId) window.setTimeout(() => document.getElementById(`action-block-${newId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0);
+        }}
         className="py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={13} /> Tháo bọc
@@ -132,9 +166,10 @@ export const ConstructionSequenceForm: React.FC = () => {
         : 'Tháo bọc cách điện';
 
     return (
-      <div key={block.id} className="space-y-2">
+      <div id={`action-block-${block.id}`} key={block.id} className="space-y-2">
         <div className="p-3 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-3 relative group">
           <button
+            type="button"
             onClick={() => removeActionBlock(block.id)}
             className="absolute -top-2 -right-2 p-1 bg-white border border-zinc-200 rounded-full text-zinc-400 hover:text-red-500 shadow-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all"
           >
@@ -181,7 +216,8 @@ export const ConstructionSequenceForm: React.FC = () => {
     );
   };
 
-  const actionBlocks = getActionBlocks();
+  const actionBlocks = actionBlocksDraft;
+  const hasGuongKiemTra = seq.guongKiemTra !== undefined;
 
   return (
     <Accordion
@@ -198,6 +234,7 @@ export const ConstructionSequenceForm: React.FC = () => {
           <div className="flex gap-2 p-1 bg-zinc-100 rounded-lg">
             {data.jobItems.map((_, idx) => (
               <button
+                type="button"
                 key={idx}
                 onClick={() => setActiveJobIdx(idx + 1)}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${
@@ -215,6 +252,7 @@ export const ConstructionSequenceForm: React.FC = () => {
         {/* Nút thêm Kiểm tra bằng mắt */}
         {!hasEyeCheck && (
           <button
+            type="button"
             onClick={() => updateSequence('eyeCheckText', '')}
             className="w-full py-2 border-2 border-dashed border-zinc-200 rounded-lg text-xs font-bold text-zinc-400 hover:border-blue-300 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
           >
@@ -226,7 +264,8 @@ export const ConstructionSequenceForm: React.FC = () => {
         {hasEyeCheck && (
           <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl shadow-sm space-y-3 relative group">
             <button
-              onClick={() => updateSequence('eyeCheckText', undefined)}
+              type="button"
+              onClick={removeEyeCheck}
               className="absolute top-2 right-2 p-1 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Trash2 size={14} />
@@ -244,8 +283,25 @@ export const ConstructionSequenceForm: React.FC = () => {
         )}
 
         {/* Gương kiểm tra (ẩn khi HM2 vì đã kiểm tra gương ở HM1) */}
-        {!isHM2 && (
-          <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4">
+        {!isHM2 && !hasGuongKiemTra && (
+          <button
+            type="button"
+            onClick={() => updateSequence('guongKiemTra', 'chuỗi sứ, khóa máng')}
+            className="w-full py-2 border-2 border-dashed border-zinc-200 rounded-lg text-xs font-bold text-zinc-400 hover:border-blue-300 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
+          >
+            <Plus size={14} /> Gương kiểm tra
+          </button>
+        )}
+
+        {!isHM2 && hasGuongKiemTra && (
+          <div className="p-4 bg-white border border-zinc-200 rounded-xl shadow-sm space-y-4 relative group">
+            <button
+              type="button"
+              onClick={removeGuongKiemTra}
+              className="absolute top-2 right-2 p-1 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Trash2 size={14} />
+            </button>
             <div className="text-xs font-bold text-blue-400">
               TT {hasEyeCheck ? 2 : 1}: Gương kiểm tra
             </div>
