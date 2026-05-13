@@ -622,7 +622,7 @@ export async function createPatctcDocx(data: any): Promise<ArrayBuffer> {
                     const trinhTu = (block.trinhTu || "").trim().replace(/\.+$/, "");
                     allSteps.push(`Điều khiển gầu đến vị trí ${viTri || "..."} để bọc cách điện.`);
                     allSteps.push(`Bọc theo trình tự: ${trinhTu || "..."}.`);
-                    allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
+                    //allSteps.push("Kiểm tra xem vùng làm việc được cách ly an toàn chưa (cần phải bọc thêm chỗ nào không). Sau khi đảm bảo vùng làm việc được cách ly an toàn mới tiến hành công việc tiếp theo.");
                     return;
                   }
 
